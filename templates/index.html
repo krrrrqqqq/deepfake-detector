@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Deepfake Detection</title>
+</head>
+<body>
+    <h2>Upload Image</h2>
+    <form action="/predict" method="post" enctype="multipart/form-data">
+        <input type="file" name="file">
+        <button type="submit">Analyze</button>
+    </form>
+
+    {% if result %}
+        <h3>Result: {{ result }}</h3>
+        <p>Confidence: {{ confidence }}%</p>
+    {% endif %}
+</body>
+</html>
