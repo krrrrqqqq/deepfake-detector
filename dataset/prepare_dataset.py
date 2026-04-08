@@ -1,8 +1,8 @@
 import os
 import pandas as pd
 
-# Тут лежит путь к папке FaceForensics
-BASE_PATH = "Z:\deepfake_detector\dataset\FaceForensics"
+# Path to the FaceForensics folder — relative to dataset/ (the script's working dir)
+BASE_PATH = "FaceForensics"
 
 data = []
 

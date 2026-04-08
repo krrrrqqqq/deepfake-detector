@@ -2,6 +2,8 @@ import os
 import random
 import shutil
 
+random.seed(42)  # ensure the same 300 real + 300 fake are selected on every run
+
 BASE_PATH = "Celeb-DF-v2"
 OUTPUT_PATH = "celebdf_subset"
 

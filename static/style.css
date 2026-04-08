@@ -1,0 +1,81 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f0f2f5;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 24px;
+}
+
+.container {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.10);
+    padding: 40px 48px;
+    max-width: 480px;
+    width: 100%;
+    text-align: center;
+}
+
+h1 { font-size: 1.75rem; margin-bottom: 6px; }
+.subtitle { color: #6b7280; margin-bottom: 28px; }
+
+form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-items: center;
+}
+
+/* Hide the native file input; show a styled label instead */
+input[type="file"] { display: none; }
+
+.file-label {
+    display: inline-block;
+    background: #e5e7eb;
+    color: #374151;
+    padding: 10px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background .15s;
+}
+.file-label:hover { background: #d1d5db; }
+
+.file-name {
+    font-size: .875rem;
+    color: #6b7280;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+button[type="submit"] {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    padding: 12px 36px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
+}
+button[type="submit"]:hover { background: #1d4ed8; }
+
+/* Result block */
+.result {
+    margin-top: 32px;
+    padding: 20px 24px;
+    border-radius: 10px;
+}
+.result h2 { font-size: 2rem; letter-spacing: .05em; }
+.result p  { margin-top: 6px; color: #374151; }
+
+.result.fake { background: #fee2e2; color: #991b1b; }
+.result.real { background: #dcfce7; color: #166534; }
+.result.error{ background: #fef3c7; color: #92400e; }

@@ -1,0 +1,14 @@
+# Deepfake Detector — Python dependencies
+# Python 3.13 (tested)
+# Install: pip install -r requirements.txt
+
+tensorflow>=2.16
+mediapipe==0.10.32
+scikit-learn>=1.4
+opencv-python>=4.9
+numpy>=1.26
+pandas>=2.2
+joblib>=1.4
+tqdm>=4.66
+flask>=3.0
+werkzeug>=3.0

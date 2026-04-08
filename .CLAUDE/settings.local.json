@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd /c \"dir /b z:\\\\deepfake_detector\\\\dataset\\\\*.npy z:\\\\deepfake_detector\\\\dataset\\\\*.pkl 2>nul\")"
+    ]
+  }
+}

@@ -3,12 +3,10 @@ import numpy as np
 import cv2
 from tqdm import tqdm
 from collections import defaultdict
-
 from tensorflow.keras.applications import EfficientNetB4
 from tensorflow.keras.applications.efficientnet import preprocess_input
 
 DATASET_PATH = "faces_dataset"
-
 IMG_SIZE = 380
 FRAMES_PER_VIDEO = 10
 BATCH_SIZE = 32
@@ -32,12 +30,10 @@ def load_image(path):
     img = preprocess_input(img)
     return img
 
-
 X = []
 y = []
 
 for label_name in ["real", "fake"]:
-
     label = 0 if label_name == "real" else 1
     folder = os.path.join(DATASET_PATH, label_name)
 
@@ -45,26 +41,20 @@ for label_name in ["real", "fake"]:
 
     videos = defaultdict(list)
 
-    # ИСПРАВЛЕНИЕ: группировка по video_id
-    # Примеры имён файлов:
-    #   real: '004.mp4_0.jpg'      -> video_id = '004.mp4'
-    #   fake: '004_982.mp4_0.jpg'  -> video_id = '004_982.mp4'
-    # Берём всё до последнего '_' (последний сегмент — номер кадра)
     for file in os.listdir(folder):
+        # Имена файлов: Method__video.mp4_0.jpg
+        # video_id = всё до последнего '_'
         video_id = "_".join(file.split("_")[:-1])
         videos[video_id].append(file)
 
-    print(f"  Found {len(videos)} videos")
+    print(f"  Found {len(videos)} unique videos")
 
     for video_id, frames in tqdm(videos.items()):
-
         frames = sorted(frames)[:FRAMES_PER_VIDEO]
-
         images = []
 
         for frame in frames:
-            img_path = os.path.join(folder, frame)
-            img = load_image(img_path)
+            img = load_image(os.path.join(folder, frame))
             if img is not None:
                 images.append(img)
 
@@ -72,9 +62,7 @@ for label_name in ["real", "fake"]:
             continue
 
         images = np.array(images)
-
         embeddings = model.predict(images, batch_size=BATCH_SIZE, verbose=0)
-
         video_embedding = np.mean(embeddings, axis=0)
 
         X.append(video_embedding)
@@ -85,8 +73,7 @@ y = np.array(y)
 
 print("\nFinal dataset shape:")
 print("X:", X.shape)
-print("y:", y.shape)
-print(f"Real: {sum(1 for v in y if v==0)}, Fake: {sum(1 for v in y if v==1)}")
+print(f"Real: {np.sum(y==0)}, Fake: {np.sum(y==1)}")
 
 np.save("X_train.npy", X)
 np.save("y_train.npy", y)
