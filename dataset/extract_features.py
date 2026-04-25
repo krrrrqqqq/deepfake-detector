@@ -63,7 +63,13 @@ for label_name in ["real", "fake"]:
 
         images = np.array(images)
         embeddings = model.predict(images, batch_size=BATCH_SIZE, verbose=0)
-        video_embedding = np.mean(embeddings, axis=0)
+
+        # Level 2: concat mean + std across frames (3584-dim).
+        # std captures frame-to-frame inconsistency — a key deepfake artefact.
+        video_embedding = np.concatenate([
+            np.mean(embeddings, axis=0),   # 1792-dim: average appearance
+            np.std(embeddings,  axis=0),   # 1792-dim: temporal flicker / artifacts
+        ])
 
         X.append(video_embedding)
         y.append(label)
@@ -72,7 +78,7 @@ X = np.array(X)
 y = np.array(y)
 
 print("\nFinal dataset shape:")
-print("X:", X.shape)
+print("X:", X.shape, "  (1792 mean + 1792 std = 3584-dim per video)")
 print(f"Real: {np.sum(y==0)}, Fake: {np.sum(y==1)}")
 
 np.save("X_train.npy", X)

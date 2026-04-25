@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Hybrid deepfake detection system combining deep feature extraction (EfficientNet-B4) with classical ML classification (SVM). Trained on FaceForensics++, cross-dataset tested on Celeb-DF v2.
+Deepfake detection system based on fine-tuned EfficientNet-B0 (224×224). Trained on combined FaceForensics++ + Celeb-DF v2 dataset with video-level train/val/test splitting. A legacy SVM pipeline is available as a fallback.
 
 ---
 
@@ -10,10 +10,13 @@ Hybrid deepfake detection system combining deep feature extraction (EfficientNet
 
 | Component | Technology |
 |---|---|
-| Feature extraction | TensorFlow/Keras — EfficientNetB4, weights=imagenet, include_top=False, pooling=avg |
+| Classifier | Fine-tuned EfficientNet-B0, 224×224, sigmoid head, two-phase training |
 | Face detection | MediaPipe 0.10+ — blaze_face_short_range.tflite |
-| Classifier | sklearn SVC — kernel=rbf, C=10, gamma=scale, class_weight=balanced |
-| Preprocessing | StandardScaler + L2 normalize (normalize from sklearn) |
+| Imbalance handling | Per-sample weights across 4 (source, label) cells — balances both real/fake and FF++/Celeb-DF simultaneously |
+| Primary metrics | ROC-AUC, Balanced Accuracy, per-source BalAcc |
+| Threshold | Auto-tuned on val by balanced accuracy, saved to model_config.json |
+| UI verdict | Three-way REAL / UNCERTAIN / FAKE via fixed band [0.40, 0.85] in app.py |
+| Aggregation | Median of per-frame probabilities |
 | Video processing | OpenCV — 10 uniform frames per video |
 | Web interface | Flask + Jinja2 |
 
@@ -26,41 +29,27 @@ deepfake_detector/
 ├── dataset/
 │   ├── FaceForensics/              # Raw FF++ videos (DO NOT MODIFY)
 │   ├── Celeb-DF-v2/                # Raw Celeb-DF videos (DO NOT MODIFY)
-│   ├── celebdf_subset/             # 300 real + 300 fake Celeb-DF videos
-│   ├── celebdf_frames/             # Extracted frames from Celeb-DF
+│   ├── celebdf_subset/             # 890 real + 300 fake Celeb-DF videos
 │   ├── celebdf_faces/              # Cropped faces from Celeb-DF
-│   ├── extracted_frames/           # Extracted frames from FF++
-│   ├── faces_dataset/              # Cropped faces from FF++ (real/ + fake/)
-│   ├── dataset_labels.csv          # All video paths + labels
-│   ├── train_split.csv             # 80% train (960 videos)
-│   ├── val_split.csv               # 20% validation (240 videos)
-│   ├── X_train.npy                 # FF++ embeddings (960, 1792)
-│   ├── y_train.npy                 # FF++ labels (960,)
-│   ├── X_test.npy                  # Celeb-DF embeddings (598, 1792)
-│   ├── y_test.npy                  # Celeb-DF labels (598,)
-│   ├── svm_model.pkl               # Trained SVM model
-│   ├── scaler.pkl                  # Fitted StandardScaler
-│   ├── blaze_face_short_range.tflite  # MediaPipe model file
+│   ├── faces_dataset/              # Cropped faces from ALL FF++ videos
+│   ├── dataset_labels.csv          # All FF++ video paths + labels (1200)
+│   ├── test_split.csv              # Held-out test video IDs + labels
+│   ├── model_config.json           # Threshold, img_size, backbone, aggregation
+│   ├── efficientnet_combined.keras # Fine-tuned model
+│   ├── blaze_face_short_range.tflite
 │   ├── prepare_dataset.py
-│   ├── split_dataset.py
-│   ├── extract_frames.py
-│   ├── extract_faces.py            # Uses MediaPipe 0.10+
-│   ├── extract_features.py
 │   ├── prepare_celebdf.py
-│   ├── extract_frames_celebdf.py
-│   ├── extract_features_celebdf.py
-│   ├── train_svm.py
-│   └── test_celebdf.py
-├── model/
-│   ├── efficientnet.py             # Legacy — do not use
-│   └── train_model.py              # Legacy — do not use
+│   ├── extract_faces.py            # FF++ faces (uses dataset_labels.csv)
+│   ├── extract_faces_celebdf.py    # Celeb-DF faces
+│   ├── finetune_combined.py        # Main training (FF++ + Celeb-DF)
+│   ├── test_combined.py            # Evaluate on held-out test split
+│   └── (legacy SVM scripts)
 ├── static/
 │   └── style.css
 ├── templates/
 │   └── index.html
-└── utils/
-    ├── feature_extraction.py       # Empty placeholder
-    └── preprocessing.py            # Empty placeholder
+├── app.py
+└── requirements.txt
 ```
 
 ---
@@ -68,167 +57,95 @@ deepfake_detector/
 ## Pipeline Execution Order
 
 ```
-1. prepare_dataset.py          # Creates dataset_labels.csv from FF++
-2. split_dataset.py            # Creates train_split.csv + val_split.csv
-3. extract_frames.py           # Extracts 10 uniform frames per FF++ video
-4. extract_faces.py            # MediaPipe face detection → faces_dataset/
-5. extract_features.py         # EfficientNet-B4 → X_train.npy, y_train.npy
-6. train_svm.py                # Trains SVM → svm_model.pkl, scaler.pkl
---- cross-dataset test ---
-7. prepare_celebdf.py          # Copies 300+300 Celeb-DF videos to celebdf_subset/
-8. extract_frames_celebdf.py   # Extracts 10 uniform frames per Celeb-DF video
-9. extract_features_celebdf.py # EfficientNet-B4 → X_test.npy, y_test.npy
-10. test_celebdf.py            # Final metrics on Celeb-DF
+1. prepare_dataset.py          # dataset_labels.csv (all 1200 FF++ videos)
+2. prepare_celebdf.py          # celebdf_subset/ (890 real + 300 fake)
+3. extract_faces.py            # faces_dataset/ from ALL FF++ videos
+4. extract_faces_celebdf.py    # celebdf_faces/ from Celeb-DF
+5. finetune_combined.py        # efficientnet_combined.keras + test_split.csv + model_config.json
+6. test_combined.py            # Metrics on held-out test split
 ```
 
 ---
 
 ## Dataset Details
 
-### FaceForensics++ (Train)
-- **Real:** 240 videos from `original_sequences/youtube/c23/videos/`
-- **Fake:** 720 videos — Deepfakes (240) + FaceSwap (240) + Face2Face (240)
-- **Class ratio:** 1:3 (real:fake) — imbalanced, must handle in training
-- **Compression:** c23
+| Dataset | Real | Fake | Total |
+|---|---|---|---|
+| FaceForensics++ | 300 | 900 (3 methods × 300) | 1200 |
+| Celeb-DF v2 | 890 (all Celeb-real + YouTube-real) | 300 (subset) | 1190 |
+| **Combined** | **1190** | **1200** | **2390** |
 
-### Celeb-DF v2 (Test only — never use for training)
-- **Real:** 298 videos (from Celeb-real + YouTube-real)
-- **Fake:** 300 videos (from Celeb-synthesis)
-- **Class ratio:** ~1:1
+Split: 70% train / 15% val / 15% test (video-level). Although overall real/fake is ~1:1, within each class there is a source imbalance (Celeb-DF real ≈ 3× FF++ real, FF++ fake ≈ 3× Celeb-DF fake). Handled via per-sample weights across the four (source, label) cells.
+
+Held-out test-set results (threshold 0.79, median aggregation): ROC-AUC **0.898**, BalAcc **0.794**, F1 **0.787**, Real recall **0.827**, Fake recall **0.761**. Per-source: FF++ BalAcc 0.635, Celeb-DF BalAcc 0.833.
 
 ---
 
-## Critical Implementation Rules
+## Critical Rules
 
-### File naming in faces_dataset/
-Fake face images MUST include the manipulation method in the filename to avoid overwriting:
-```
-Format: {Method}__{video_name}_{frame_idx}.jpg
-Example: Deepfakes__107_109.mp4_0.jpg
-         FaceSwap__107_109.mp4_0.jpg
-         Face2Face__107_109.mp4_0.jpg
-```
-Without this, all three methods share the same filename and overwrite each other, leaving only 296 unique videos instead of 720.
+### Symmetric augmentation ONLY
+NEVER use different augmentation for real vs fake. Asymmetric augmentation (heavy for real, light for fake) causes the model to learn augmentation artefacts instead of deepfake artefacts. The symptom: ~86% train accuracy but val_accuracy stuck at exactly 50%.
 
-### Video-level embedding (not frame-level)
-Each video is represented as a SINGLE 1792-dim vector = mean of all frame embeddings.
-```python
-embeddings = model.predict(images)       # shape: (n_frames, 1792)
-video_embedding = np.mean(embeddings, axis=0)  # shape: (1792,)
-```
-Never classify individual frames and then majority-vote — the SVM receives one vector per video.
+### Monitor val_auc, not val_accuracy
+With imbalanced data, val_accuracy is misleading. A model predicting everything as the majority class gets 67% accuracy on 1:2 data. Use val_auc (threshold-independent, class-balance-robust) for EarlyStopping and ModelCheckpoint with `mode="max"`.
 
-### Preprocessing must match between train and test
-Always apply in this exact order:
-```python
-X = scaler.transform(X)   # StandardScaler (fit only on train)
-X = normalize(X)          # L2 normalization
-```
+### Per-sample weights across (source, label) cells, not class_weight
+`class_weight` only balances real vs fake. Our data has a second imbalance (within real, Celeb-DF outweighs FF++ by ~3×; within fake, the reverse). If uncorrected, the model learns "source = label" as a shortcut — FF++ real recall collapsed to 0.30 even with perfect overall real/fake balance. Per-sample weights `w = n_total / (n_cells * n_cell)` equalise contribution of all four cells. Passed through `tf.data` as the third tuple element; Keras reads it automatically.
 
-### BGR→RGB conversion is mandatory
-OpenCV reads images as BGR. EfficientNet expects RGB.
+### Median aggregation, not mean
+For combining per-frame probabilities into a video score, use median. It's robust to outlier frames.
+
+### Threshold from model_config.json
+Never hardcode threshold=0.5. The training script optimises threshold on the validation set and saves it. The test script loads it automatically.
+
+### Three-way verdict with fixed uncertainty band
+`app.py` defines `UNCERTAIN_LOW = 0.40` and `UNCERTAIN_HIGH = 0.85` — anchored to the score itself, not to the threshold. Scores below 0.40 → REAL; above 0.85 → FAKE; in between → UNCERTAIN with raw fake-probability shown. The optimised threshold (currently 0.79) falls inside the band. Outside the band, REAL/FAKE confidence is rescaled: band edge → 50%, extreme → 100%. Semantics stay stable across retrainings even if the threshold moves.
+
+### BGR→RGB conversion
 ```python
 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 ```
-This must be present in BOTH extract_features.py AND extract_features_celebdf.py.
 
-### Class imbalance handling
-Training data is 1:3 (real:fake). Options (pick one):
-- **Undersample fake to 240** — take 80 videos from each method (Deepfakes/FaceSwap/Face2Face)
-- **Use class_weight=balanced** in SVC — partial fix, not sufficient alone
-- Do NOT use gamma="auto" with SVC — at 1792 features it causes degenerate solutions
-- Do NOT optimize with scoring="f1" in GridSearchCV — allows "predict all fake" to win
-
-### MediaPipe face detection (v0.10+)
+### MediaPipe 0.10+ API
 ```python
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-
-base_options = python.BaseOptions(model_asset_path="blaze_face_short_range.tflite")
-options = vision.FaceDetectorOptions(base_options=base_options, min_detection_confidence=0.4)
-detector = vision.FaceDetector.create_from_options(options)
-
-rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-result = detector.detect(mp_image)
 ```
-The old `mp.solutions.face_detection` API does NOT work in mediapipe 0.10+.
 
 ---
 
 ## Known Issues & History
 
-### Issue 1: Duplicate filenames (FIXED)
-- **Problem:** Deepfakes, FaceSwap, Face2Face all produce files like `107_109.mp4`. Old code used `os.path.basename(video_path)` as filename — each method overwrote the previous, leaving only 296/720 unique fake videos.
-- **Fix:** Prefix filename with method name extracted from path.
-
-### Issue 2: Haar Cascade low detection rate (FIXED)
-- **Problem:** Old parameters `scaleFactor=1.3, minNeighbors=5` detected faces in only 41% of fake frames.
-- **Fix:** Replaced with MediaPipe — 98.4% detection rate.
-
-### Issue 3: Missing BGR→RGB in Celeb-DF pipeline (FIXED)
-- **Problem:** `extract_features_celebdf.py` was missing `cv2.cvtColor(img, cv2.COLOR_BGR2RGB)`.
-- **Fix:** Added conversion.
-
-### Issue 4: Frame-level vs video-level mismatch (FIXED)
-- **Problem:** `extract_features_celebdf.py` treated each frame as a separate sample. `extract_features.py` averaged frames per video. Train/test distributions didn't match.
-- **Fix:** Both scripts now produce one embedding per video via mean pooling.
-
-### Issue 5: Class imbalance 1:3 (PENDING)
-- **Problem:** 240 real vs 720 fake causes model to predict fake for almost everything. TN ≈ 2 on validation.
-- **Fix needed:** Add undersample in train_svm.py — resample fake to 240 samples before training.
-
-### Issue 6: probability=True destabilizes SVM (FIXED)
-- **Problem:** With only ~428 training samples, Platt scaling (used by probability=True) causes unstable models — accuracy drops to 40%.
-- **Fix:** Use probability=False. For AUC use decision_function instead of predict_proba.
-
----
-
-## Current Metrics (latest run)
-
-### FF++ Validation (with class imbalance, not yet fixed)
-| Metric | Value |
-|---|---|
-| Accuracy | 49.5% |
-| Precision | 66.9% |
-| Recall | 64.6% |
-| F1-score | 65.7% |
-| TN | 2 (almost all real misclassified as fake) |
-
-### Celeb-DF v2 Cross-Dataset Test
-| Metric | Value |
-|---|---|
-| Accuracy | 58.9% |
-| Precision | 56.3% |
-| Recall | 80.3% |
-| F1-score | 66.2% |
-| ROC-AUC | 60.1% |
-
-### Target metrics (after fixing class imbalance)
-| Dataset | Accuracy | F1 |
+| Issue | Status | Fix |
 |---|---|---|
-| FF++ validation | ~85%+ | ~87%+ |
-| Celeb-DF test | ~63%+ | ~63%+ |
+| Asymmetric augmentation → learns augmentation, not deepfakes | FIXED | Symmetric augmentation |
+| val_accuracy=50% always, predicts all as one class | FIXED | val_auc + class_weight + symmetric aug |
+| B4 380×380 too slow on CPU (8.5h) | FIXED | B0 224×224 (~2-3h) |
+| Hardcoded threshold=0.5 mismatched with training | FIXED | Auto-save to model_config.json |
+| mean(probs) sensitive to outlier frames | FIXED | median aggregation |
+| Undersampling discards 2/3 of fake data | FIXED | class_weight instead |
+| Cross-dataset SVM ~50% accuracy | FIXED | Combined dataset + fine-tuning |
+| Real recall collapse (0.61) from 1:2 class imbalance | FIXED | Included all 890 Celeb-DF real videos → 1:1 balance → TNR 0.77, BalAcc 0.80 |
+| Hidden "domain shortcut" — model learned FF→fake, CDF→real after 1:1 rebalance (FF++ real recall 0.30, Celeb-DF fake recall 0.66) | PARTIALLY FIXED | Per-sample weights across (source, label) cells → FF++ real 0.50, Celeb-DF fake 0.73. Full fix blocked by FF++ real data starvation (only 300 videos available) |
+| Hard REAL/FAKE label unreliable near the decision boundary | FIXED | Fixed uncertainty band `[0.40, 0.85]` in app.py — three-way verdict, decoupled from threshold |
 
 ---
 
 ## Environment
 
-- Python 3.13
-- TensorFlow (with oneDNN — warnings about oneDNN are normal, not errors)
-- mediapipe 0.10.32
-- scikit-learn
-- OpenCV (cv2)
-- pandas, numpy
-- joblib
+- Python 3.13, TensorFlow >= 2.16, mediapipe 0.10.32, scikit-learn >= 1.4
+- oneDNN warnings from TensorFlow are normal
+- All scripts run from dataset/ directory
 
 ---
 
 ## What NOT to do
 
-- Do NOT run `extract_faces.py` without clearing `faces_dataset/` first — old files accumulate
-- Do NOT use `gamma="auto"` in SVC with high-dimensional features
-- Do NOT use `scoring="f1"` in GridSearchCV — leads to degenerate "predict all fake" solution
-- Do NOT use `probability=True` in SVC with small datasets (<500 samples)
-- Do NOT add Celeb-DF data to training — it is reserved for cross-dataset evaluation only (methodology constraint from the paper)
-- Do NOT modify `val_split.csv` — it is used for in-dataset validation reporting
+- Do NOT use asymmetric augmentation (different for real vs fake)
+- Do NOT monitor val_accuracy for EarlyStopping on imbalanced data
+- Do NOT hardcode threshold — always read from model_config.json (`test_combined.py`). In `app.py` the UI uses fixed band, not threshold.
+- Do NOT undersample — use per-sample weights
+- Do NOT fall back to plain `class_weight` alone — it misses the within-class source imbalance that caused the "domain shortcut" bug
+- Do NOT use mean for video-level aggregation — use median
+- Do NOT split by frame — always split by video ID
+- Do NOT report only overall metrics — run the per-source breakdown in `test_combined.py`; overall BalAcc can hide source-specific recall collapse

@@ -90,10 +90,12 @@ for label_name, label in [("real", 0), ("fake", 1)]:
         # Batch inference
         embeddings = model.predict(images, batch_size=BATCH_SIZE, verbose=0)
 
-        # ИСПРАВЛЕНИЕ: усреднение на уровне видео (mean pooling)
-        # Раньше каждый кадр добавлялся отдельно — размерность X_test
-        # не совпадала с логикой X_train
-        video_embedding = np.mean(embeddings, axis=0)
+        # Level 2: concat mean + std (must match extract_features.py exactly).
+        # std captures temporal inconsistency — a key deepfake artefact.
+        video_embedding = np.concatenate([
+            np.mean(embeddings, axis=0),   # 1792-dim
+            np.std(embeddings,  axis=0),   # 1792-dim
+        ])
 
         X.append(video_embedding)
         y.append(label)
@@ -102,7 +104,7 @@ X = np.array(X)
 y = np.array(y)
 
 print("\nFinal test dataset shape:")
-print("X:", X.shape)
+print("X:", X.shape, "  (1792 mean + 1792 std = 3584-dim per video)")
 print("y:", y.shape)
 print(f"Real: {np.sum(y == 0)}, Fake: {np.sum(y == 1)}")
 

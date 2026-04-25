@@ -22,7 +22,12 @@
         {% if result %}
         <div class="result {{ result | lower }}">
             <h2>{{ result }}</h2>
+            {% if result == "UNCERTAIN" %}
+            <p>Fake probability: <strong>{{ confidence }}%</strong></p>
+            <p class="hint">Score falls inside the uncertainty band — manual review recommended.</p>
+            {% else %}
             <p>Confidence: <strong>{{ confidence }}%</strong></p>
+            {% endif %}
         </div>
         {% endif %}
     </div>

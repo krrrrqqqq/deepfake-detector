@@ -12,6 +12,10 @@ dataset/*.npy
 
 # Обученные модели
 dataset/*.pkl
+dataset/*.keras
+
+# Загруженные пользователем видео
+uploads/
 
 # Python
 __pycache__/

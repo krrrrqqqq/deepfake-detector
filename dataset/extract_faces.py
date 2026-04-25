@@ -11,7 +11,7 @@ NUM_FRAMES = 10
 OUTPUT_DIR = "faces_dataset"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-df = pd.read_csv("train_split.csv")
+df = pd.read_csv("dataset_labels.csv")
 
 MODEL_PATH = "blaze_face_short_range.tflite"
 

@@ -1,0 +1,8 @@
+{
+  "threshold": 0.79,
+  "img_size": 224,
+  "backbone": "EfficientNetB0",
+  "model_path": "efficientnet_combined.keras",
+  "aggregation": "median",
+  "frames_per_video": 10
+}

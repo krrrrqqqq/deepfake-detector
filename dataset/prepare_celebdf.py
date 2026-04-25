@@ -2,7 +2,11 @@ import os
 import random
 import shutil
 
-random.seed(42)  # ensure the same 300 real + 300 fake are selected on every run
+# Take ALL available real videos (Celeb-real + YouTube-real) to fix the
+# class imbalance that was causing real-video recall of 0.61. Fake is
+# still subsampled to 300 to keep ~1:1 balance against the 900 FF++ fakes
+# already in the combined dataset.
+random.seed(42)  # deterministic fake subsample
 
 BASE_PATH = "Celeb-DF-v2"
 OUTPUT_PATH = "celebdf_subset"
@@ -17,7 +21,7 @@ FAKE_PATH = os.path.join(BASE_PATH, "Celeb-synthesis")
 os.makedirs(os.path.join(OUTPUT_PATH, "real"), exist_ok=True)
 os.makedirs(os.path.join(OUTPUT_PATH, "fake"), exist_ok=True)
 
-# собираем real видео
+# собираем real видео (все доступные)
 real_videos = []
 
 for p in REAL_PATHS:
@@ -31,11 +35,11 @@ fake_videos = [
     if f.endswith(".mp4")
 ]
 
-random.shuffle(real_videos)
 random.shuffle(fake_videos)
-
-real_videos = real_videos[:300]
 fake_videos = fake_videos[:300]
+
+print(f"Found {len(real_videos)} real videos (taking all)")
+print(f"Found fakes, subsampling to {len(fake_videos)}")
 
 print("Copying real videos...")
 
@@ -47,4 +51,5 @@ print("Copying fake videos...")
 for v in fake_videos:
     shutil.copy(v, os.path.join(OUTPUT_PATH, "fake"))
 
-print("Done.")
+print(f"Done. Output: {OUTPUT_PATH}/real ({len(real_videos)}) "
+      f"+ {OUTPUT_PATH}/fake ({len(fake_videos)})")
