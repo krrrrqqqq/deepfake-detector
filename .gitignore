@@ -13,6 +13,7 @@ dataset/*.npy
 # Обученные модели
 dataset/*.pkl
 dataset/*.keras
+dataset/ablations/**/*.keras
 
 # Загруженные пользователем видео
 uploads/

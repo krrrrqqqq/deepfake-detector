@@ -1,0 +1,10 @@
+{
+  "variant": "asymmetric_aug",
+  "threshold": 0.78,
+  "img_size": 224,
+  "backbone": "EfficientNetB0",
+  "model_path": "ablations\\asymmetric_aug\\model.keras",
+  "aggregation": "median",
+  "frames_per_video": 10,
+  "val_bal_acc": 0.5871410736579277
+}

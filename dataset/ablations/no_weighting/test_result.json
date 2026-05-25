@@ -1,0 +1,36 @@
+{
+  "variant": "no_weighting",
+  "threshold": 0.74,
+  "n_test_videos": 359,
+  "overall": {
+    "roc_auc": 0.9120422098075729,
+    "pr_auc": 0.9084255963953313,
+    "bal_acc": 0.824487895716946,
+    "f1": 0.8264462809917356,
+    "precision": 0.819672131147541,
+    "fake_recall": 0.8333333333333334,
+    "real_recall": 0.8156424581005587,
+    "confusion": {
+      "TN": 146,
+      "FP": 33,
+      "FN": 30,
+      "TP": 150
+    }
+  },
+  "ff_pp": {
+    "n_videos": 183,
+    "n_real": 44,
+    "n_fake": 139,
+    "real_recall": 0.45454545454545453,
+    "fake_recall": 0.8633093525179856,
+    "bal_acc": 0.6589274035317201
+  },
+  "celebdf": {
+    "n_videos": 176,
+    "n_real": 135,
+    "n_fake": 41,
+    "real_recall": 0.9333333333333333,
+    "fake_recall": 0.7317073170731707,
+    "bal_acc": 0.832520325203252
+  }
+}

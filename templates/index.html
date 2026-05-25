@@ -3,39 +3,243 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deepfake Detector</title>
+    <title>Deepfake Detector — EfficientNet-B0</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <h1>Deepfake Detector</h1>
-        <p class="subtitle">Upload an image or video to analyse.</p>
-
-        <form action="/predict" method="post" enctype="multipart/form-data">
-            <label class="file-label" for="file">Choose file</label>
-            <input type="file" id="file" name="file"
-                   accept="image/*,video/mp4,video/avi,video/quicktime,video/x-matroska">
-            <span id="file-name" class="file-name">No file selected</span>
-            <button type="submit">Analyse</button>
-        </form>
-
-        {% if result %}
-        <div class="result {{ result | lower }}">
-            <h2>{{ result }}</h2>
-            {% if result == "UNCERTAIN" %}
-            <p>Fake probability: <strong>{{ confidence }}%</strong></p>
-            <p class="hint">Score falls inside the uncertainty band — manual review recommended.</p>
-            {% else %}
-            <p>Confidence: <strong>{{ confidence }}%</strong></p>
-            {% endif %}
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2 4 5v6c0 5 3.5 9.5 8 11 4.5-1.5 8-6 8-11V5l-8-3z"/>
+                    <path d="m9 12 2 2 4-4"/>
+                </svg>
+            </span>
+            <div class="brand-text">
+                <strong>Deepfake Detector</strong>
+                <span class="brand-sub">EfficientNet-B0 · FF++ + Celeb-DF</span>
+            </div>
         </div>
-        {% endif %}
-    </div>
+        <nav class="topnav">
+            <a href="#detect" class="nav-link active">Detect</a>
+            <a href="#how" class="nav-link">How it works</a>
+            <a href="#metrics" class="nav-link">Metrics</a>
+            <a href="https://github.com/" class="nav-link" target="_blank" rel="noopener">Source</a>
+        </nav>
+    </header>
+
+    <main class="page">
+        <section class="hero">
+            <div class="hero-copy">
+                <span class="eyebrow">
+                    <span class="eyebrow-dot"></span>
+                    Fine-tuned on 2,390 videos &middot; ROC-AUC 0.898
+                </span>
+                <h1 class="display">
+                    Check if <em>it&rsquo;s a</em>
+                    <em>deepfake.</em>
+                </h1>
+                <p class="lede">
+                    Upload an image or short video. The model crops the face, runs
+                    EfficientNet-B0 over uniformly sampled frames, and returns a
+                    video-level verdict with a calibrated uncertainty band.
+                </p>
+                <ul class="hero-points">
+                    <li><span>1</span>MediaPipe face crop with 20% padding</li>
+                    <li><span>2</span>Per-frame fake probability (sigmoid head)</li>
+                    <li><span>3</span>Median aggregation &rarr; REAL / UNCERTAIN / FAKE</li>
+                </ul>
+                <p class="meta-row">
+                    <span class="chip">EfficientNet-B0 224&times;224</span>
+                    <span class="chip">Median over 10 frames</span>
+                    <span class="chip">Threshold 0.79</span>
+                </p>
+            </div>
+
+            <div class="panel" id="detect">
+                <div class="panel-head">
+                    <span class="panel-eyebrow">
+                        <span class="eyebrow-dot"></span>
+                        Visual deepfake detection
+                    </span>
+                    <h2>Select an image or video file.</h2>
+                    <p>Faces must be clearly visible. Files are processed locally and deleted after analysis.</p>
+                </div>
+
+                <div class="tabs" role="tablist">
+                    <button type="button" class="tab active" data-mode="image" role="tab">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>
+                        Image
+                    </button>
+                    <button type="button" class="tab" data-mode="video" role="tab">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8z"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
+                        Video
+                    </button>
+                </div>
+
+                <form action="/predict" method="post" enctype="multipart/form-data" id="upload-form">
+                    <label for="file" class="dropzone" id="dropzone">
+                        <input type="file" id="file" name="file"
+                               accept="image/*,video/mp4,video/avi,video/quicktime,video/x-matroska">
+                        <div class="dropzone-inner">
+                            <span class="dropzone-icon" aria-hidden="true">
+                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M12 16V4m0 0-4 4m4-4 4 4"/>
+                                    <path d="M20 16v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/>
+                                </svg>
+                            </span>
+                            <span class="dropzone-title" id="file-name">Drop a file here or click to browse</span>
+                            <span class="dropzone-hint">JPG, PNG, MP4, MOV, AVI, MKV &middot; up to 100&nbsp;MB</span>
+                        </div>
+                    </label>
+
+                    <button type="submit" class="cta">
+                        Analyse
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+                    </button>
+                </form>
+
+                {% if result %}
+                <div class="result-block result-{{ result | lower }}">
+                    {% if result == "Error" %}
+                        <div class="result-head">
+                            <span class="result-eyebrow"><span class="eyebrow-dot"></span>Detection failed</span>
+                            <h3>We couldn&rsquo;t analyse this file.</h3>
+                        </div>
+                        <p class="result-message">{{ confidence }}</p>
+                    {% else %}
+                        <div class="result-head">
+                            <span class="result-eyebrow"><span class="eyebrow-dot"></span>Detection result</span>
+                            <h3>
+                                {% if result == "REAL" %}Likely authentic
+                                {% elif result == "FAKE" %}Likely AI-generated or manipulated
+                                {% else %}Inconclusive &mdash; manual review recommended
+                                {% endif %}
+                            </h3>
+                        </div>
+
+                        <div class="verdict-card">
+                            <div class="ring" style="--p: {{ confidence }}">
+                                <div class="ring-inner">
+                                    <span class="ring-value">{{ confidence }}<span>%</span></span>
+                                    <span class="ring-label">
+                                        {% if result == "UNCERTAIN" %}fake probability
+                                        {% else %}confidence{% endif %}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="verdict-text">
+                                <span class="verdict-tag tag-{{ result | lower }}">{{ result }}</span>
+                                {% if result == "UNCERTAIN" %}
+                                    <p>Score lies in the uncertainty band <code>[0.40&ndash;0.85]</code>. The model didn&rsquo;t commit to a verdict; treat the raw probability as a soft signal, not a decision.</p>
+                                {% elif result == "REAL" %}
+                                    <p>Per-frame probabilities aggregate to a score below the lower band edge (0.40). Confidence is rescaled from band edge (50%) to extreme (100%).</p>
+                                {% else %}
+                                    <p>Per-frame probabilities aggregate to a score above the upper band edge (0.85). Confidence is rescaled from band edge (50%) to extreme (100%).</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="info" id="how">
+            <div class="info-card">
+                <span class="info-num">01</span>
+                <h4>Face crop</h4>
+                <p>MediaPipe BlazeFace picks the highest-confidence face per frame, padded by 20%. If no face is detected on any sampled frame, the request is rejected before inference &mdash; non-face crops would produce a meaningless score.</p>
+            </div>
+            <div class="info-card">
+                <span class="info-num">02</span>
+                <h4>Per-frame inference</h4>
+                <p>Fine-tuned EfficientNet-B0 (top 80 layers unfrozen, BN kept in inference mode) maps each 224&times;224 face crop to a fake probability. 10 uniformly sampled frames per video.</p>
+            </div>
+            <div class="info-card">
+                <span class="info-num">03</span>
+                <h4>Three-way verdict</h4>
+                <p>Median aggregation gives one video-level score. A fixed band <code>[0.40, 0.85]</code> separates confident REAL / FAKE from UNCERTAIN. The optimised threshold (0.79) sits inside the band, so semantics stay stable across retrainings.</p>
+            </div>
+        </section>
+
+        <section class="metrics" id="metrics">
+            <div class="metrics-head">
+                <span class="eyebrow"><span class="eyebrow-dot"></span>Held-out test set &middot; 359 videos</span>
+                <h2>Honest numbers, with the caveats.</h2>
+                <p>Per-source breakdown is shown alongside overall metrics &mdash; aggregate accuracy can hide source-specific recall collapse on imbalanced data.</p>
+            </div>
+            <div class="metric-grid">
+                <div class="metric"><span class="metric-num">0.898</span><span class="metric-name">ROC-AUC</span></div>
+                <div class="metric"><span class="metric-num">0.794</span><span class="metric-name">Balanced Acc.</span></div>
+                <div class="metric"><span class="metric-num">0.787</span><span class="metric-name">F1-score</span></div>
+                <div class="metric"><span class="metric-num">0.827</span><span class="metric-name">Real recall</span></div>
+                <div class="metric"><span class="metric-num">0.761</span><span class="metric-name">Fake recall</span></div>
+                <div class="metric"><span class="metric-num">0.79</span><span class="metric-name">Threshold</span></div>
+            </div>
+            <div class="per-source">
+                <div class="per-source-row">
+                    <span class="src-name">FaceForensics++</span>
+                    <span class="src-bar"><span style="--w: 63.5%"></span></span>
+                    <span class="src-val">BalAcc 0.635</span>
+                </div>
+                <div class="per-source-row">
+                    <span class="src-name">Celeb-DF v2</span>
+                    <span class="src-bar"><span style="--w: 83.3%"></span></span>
+                    <span class="src-val">BalAcc 0.833</span>
+                </div>
+                <p class="caveat">FF++ real recall is limited by data starvation &mdash; only 300 FF++ real videos exist in the corpus. The uncertainty band absorbs most borderline FF++ real videos into UNCERTAIN rather than forcing a FAKE verdict.</p>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <span>Built with Flask, TensorFlow 2.16, MediaPipe 0.10.</span>
+        <span>EfficientNet-B0 fine-tuned on FaceForensics++ + Celeb-DF v2.</span>
+    </footer>
 
     <script>
-        document.getElementById('file').addEventListener('change', function () {
-            var name = this.files.length ? this.files[0].name : 'No file selected';
-            document.getElementById('file-name').textContent = name;
+        const fileInput = document.getElementById('file');
+        const fileName  = document.getElementById('file-name');
+        const dropzone  = document.getElementById('dropzone');
+        const form      = document.getElementById('upload-form');
+
+        fileInput.addEventListener('change', () => {
+            fileName.textContent = fileInput.files.length
+                ? fileInput.files[0].name
+                : 'Drop a file here or click to browse';
+        });
+
+        ['dragenter', 'dragover'].forEach(ev =>
+            dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+        ['dragleave', 'drop'].forEach(ev =>
+            dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+        dropzone.addEventListener('drop', e => {
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                fileName.textContent = e.dataTransfer.files[0].name;
+            }
+        });
+
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                fileInput.setAttribute('accept',
+                    tab.dataset.mode === 'video'
+                        ? 'video/mp4,video/avi,video/quicktime,video/x-matroska'
+                        : 'image/*');
+            });
+        });
+
+        form.addEventListener('submit', () => {
+            if (!fileInput.files.length) return;
+            const btn = form.querySelector('.cta');
+            btn.classList.add('loading');
+            btn.innerHTML = '<span class="spinner"></span> Analysing&hellip;';
         });
     </script>
 </body>
