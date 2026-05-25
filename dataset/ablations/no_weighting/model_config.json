@@ -1,0 +1,10 @@
+{
+  "variant": "no_weighting",
+  "threshold": 0.74,
+  "img_size": 224,
+  "backbone": "EfficientNetB0",
+  "model_path": "ablations\\no_weighting\\model.keras",
+  "aggregation": "median",
+  "frames_per_video": 10,
+  "val_bal_acc": 0.8660424469413233
+}

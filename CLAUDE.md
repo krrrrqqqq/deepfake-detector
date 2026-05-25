@@ -52,16 +52,18 @@ Install dependencies: `pip install -r requirements.txt`
 
 ### Primary — Fine-tuned EfficientNet-B0 (combined dataset)
 
-1. MediaPipe face detection → crop with 20% padding (central-crop fallback)
+1. MediaPipe face detection → crop with 20% padding. Frames without a detected face are skipped; if **all** sampled frames fail detection the request is rejected with an explicit "no face detected" message before any CNN inference (see *Inference vs training-time face extraction* below).
 2. Fine-tuned EfficientNet-B0 (224×224) with sigmoid head → per-frame fake probability
 3. Median of per-frame probabilities → video-level score
 4. Threshold from `model_config.json` → REAL / UNCERTAIN / FAKE
 
+**Inference vs training-time face extraction.** The inference pipeline in `app.py` has **no central-crop fallback** — running the CNN on a non-face crop (landscape, document, animal) produces a meaningless score, so videos with zero face-positive frames are rejected upstream. The training-time extractors (`extract_faces.py`, `extract_faces_celebdf.py`) **do** use a central-crop fallback to keep frame counts uniform across videos; the model was therefore trained on a small fraction of central-crop frames. Inference is more conservative than training, which is fine — the model still classifies real face crops correctly without ever seeing the fallback path.
+
 The three-way verdict uses a **fixed uncertainty band** `[UNCERTAIN_LOW, UNCERTAIN_HIGH] = [0.40, 0.85]` in `app.py`, decoupled from the threshold. Rationale: score ≈ 0.5 is intrinsically ambiguous regardless of where the decision threshold sits (currently 0.79), so the band is anchored to the score itself rather than to the threshold. The optimised threshold falls *inside* the band — scores right at the boundary are maximally uncertain. Scores below 0.40 are confidently REAL, scores above 0.85 are confidently FAKE; anything in between is reported as UNCERTAIN with the raw fake-probability. Confidence for REAL/FAKE is rescaled: 50% at the band edge → 100% at the extreme.
 
 Training uses two-phase approach:
-- **Phase 1 (warm-up, 3 epochs):** Frozen base, only Dense head trains (lr=1e-3)
-- **Phase 2 (fine-tune, up to 30 epochs):** Top 30 layers unfrozen (lr=1e-5)
+- **Phase 1 (warm-up, 1 epoch):** Frozen base, only Dense head trains (lr=1e-3). One epoch is enough to push the head off random initialisation; longer warm-up wastes time because frozen ImageNet features cannot discriminate deepfakes on their own.
+- **Phase 2 (fine-tune, up to 30 epochs):** Top 80 EfficientNet-B0 layers unfrozen (~⅓ of the network's ~237 layers), lr=5e-5. lr=1e-5 was tried first and left the head stuck on a ~0.5 plateau; 5e-5 gives the head enough signal to escape it. All BatchNormalization layers are kept in inference mode throughout fine-tuning — re-computing BN statistics on small training batches destroys ImageNet pretrained features and causes oscillating val_auc (the documented EfficientNet fine-tuning trap).
 
 ### Key design decisions
 

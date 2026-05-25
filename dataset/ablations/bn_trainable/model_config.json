@@ -1,0 +1,10 @@
+{
+  "variant": "bn_trainable",
+  "threshold": 0.37,
+  "img_size": 224,
+  "backbone": "EfficientNetB0",
+  "model_path": "ablations\\bn_trainable\\model.keras",
+  "aggregation": "median",
+  "frames_per_video": 10,
+  "val_bal_acc": 0.8599875156054931
+}

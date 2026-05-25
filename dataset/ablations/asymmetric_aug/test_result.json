@@ -1,0 +1,36 @@
+{
+  "variant": "asymmetric_aug",
+  "threshold": 0.78,
+  "n_test_videos": 359,
+  "overall": {
+    "roc_auc": 0.8112507759155805,
+    "pr_auc": 0.7685283395898874,
+    "bal_acc": 0.5754189944134078,
+    "f1": 0.703125,
+    "precision": 0.5421686746987951,
+    "fake_recall": 1.0,
+    "real_recall": 0.15083798882681565,
+    "confusion": {
+      "TN": 27,
+      "FP": 152,
+      "FN": 0,
+      "TP": 180
+    }
+  },
+  "ff_pp": {
+    "n_videos": 183,
+    "n_real": 44,
+    "n_fake": 139,
+    "real_recall": 0.022727272727272728,
+    "fake_recall": 1.0,
+    "bal_acc": 0.5113636363636364
+  },
+  "celebdf": {
+    "n_videos": 176,
+    "n_real": 135,
+    "n_fake": 41,
+    "real_recall": 0.1925925925925926,
+    "fake_recall": 1.0,
+    "bal_acc": 0.5962962962962963
+  }
+}
