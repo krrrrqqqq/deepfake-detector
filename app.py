@@ -24,7 +24,7 @@ import joblib
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
@@ -71,9 +71,15 @@ app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
 # ── Load models once at startup ────────────────────────────────────────────────
 print("Loading MediaPipe face detector...")
 _base_opts = python.BaseOptions(model_asset_path=DETECTOR_PATH)
+# min_detection_confidence=0.2 (not 0.4): deepfake artefacts lower BlazeFace's
+# confidence on manipulated faces. On FF++ Deepfakes clips the presenter's face
+# is large and clearly present, yet scores 0.1–0.4 — so a 0.4 cutoff rejected
+# genuine faces as "no face detected". 0.2 recovers them while staying strict
+# enough that truly face-less content (landscape, document) still yields zero
+# detections and is rejected upstream.
 _det_opts  = vision.FaceDetectorOptions(
     base_options=_base_opts,
-    min_detection_confidence=0.4,
+    min_detection_confidence=0.2,
 )
 detector = vision.FaceDetector.create_from_options(_det_opts)
 
@@ -265,25 +271,52 @@ def index():
     return render_template("index.html")
 
 
+def _err(message: str):
+    """Uniform JSON error payload for the AJAX front-end."""
+    return jsonify(status="error", message=message)
+
+
 @app.route("/predict", methods=["POST"])
 def predict():
+    """Analyse an uploaded video and return a JSON verdict.
+
+    The browser submits via fetch() and renders the result in place without a
+    page reload. The server deletes its copy of the file after inference.
+    """
     if "file" not in request.files:
-        return render_template("index.html", result="Error",
-                               confidence="No file field in request.")
+        return _err("No file field in request."), 400
 
     file = request.files["file"]
     if not file or file.filename == "":
-        return render_template("index.html", result="Error",
-                               confidence="No file selected.")
+        return _err("No file selected."), 400
 
-    filename = secure_filename(file.filename)
-    ext      = os.path.splitext(filename)[1].lower()
+    # Derive the extension from the ORIGINAL name. secure_filename() strips all
+    # non-ASCII characters, so a Cyrillic name like "видео.mp4" collapses to
+    # "mp4" and loses its extension entirely — which would wrongly fail the
+    # format check before we ever look for a face. safe_name is only used for
+    # the disk path.
+    display_name = file.filename
+    ext          = os.path.splitext(display_name)[1].lower()
 
-    if ext not in ALLOWED_IMAGE_EXT | ALLOWED_VIDEO_EXT:
-        return render_template("index.html", result="Error",
-                               confidence=f"Unsupported file type: {ext}")
+    # This detector is video-based: the model is frame-level and a video-level
+    # verdict comes from median-aggregating per-frame probabilities. Single
+    # images are rejected — one frame has no aggregation and falls outside the
+    # FF++/Celeb-DF video-deepfake scope the model was trained and evaluated on.
+    if ext in ALLOWED_IMAGE_EXT:
+        return _err("Image input is not supported — this detector is "
+                    "video-based. Please upload a video file (MP4, MOV, AVI, "
+                    "MKV)."), 415
 
-    save_path = os.path.join(UPLOAD_FOLDER, filename)
+    if ext not in ALLOWED_VIDEO_EXT:
+        return _err(f"Unsupported file type: {ext or 'no extension'}. "
+                    "Please upload a video file (MP4, MOV, AVI, MKV)."), 415
+
+    # Build a safe on-disk name; re-attach the validated extension if securing
+    # stripped it (fully non-ASCII basename).
+    safe_name = secure_filename(display_name) or "upload"
+    if not safe_name.lower().endswith(ext):
+        safe_name += ext
+    save_path = os.path.join(UPLOAD_FOLDER, safe_name)
     file.save(save_path)
 
     try:
@@ -292,22 +325,20 @@ def predict():
         faces = collect_faces(save_path, prep_fn)
 
         if not faces:
-            return render_template(
-                "index.html", result="Error",
-                confidence=("No face detected in the uploaded file. "
-                            "Please upload a video or image with a clearly "
-                            "visible human face.")
-            )
+            return _err("No face detected in the video. MediaPipe found no "
+                        "face in any of the sampled frames, so there is "
+                        "nothing to analyse. Please upload a video with a "
+                        "clearly visible human face.")
 
         if finetuned_model is not None:
             result, confidence = predict_finetuned(faces)
         else:
             result, confidence = predict_svm(faces)
 
-        return render_template("index.html", result=result, confidence=confidence)
+        return jsonify(status="ok", result=result, confidence=confidence)
 
     except Exception as exc:
-        return render_template("index.html", result="Error", confidence=str(exc))
+        return _err(str(exc)), 500
     finally:
         if os.path.exists(save_path):
             os.remove(save_path)

@@ -266,6 +266,16 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-si
     background: var(--accent-soft);
 }
 .dropzone input[type="file"] { display: none; }
+/* Persisted "file selected" state after analysis (name echoed back by server). */
+.dropzone.has-file {
+    border-style: solid;
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+.dropzone.has-file .dropzone-icon {
+    color: var(--accent-deep);
+    border-color: var(--accent);
+}
 
 .dropzone-inner { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .dropzone-icon {
@@ -357,7 +367,7 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-si
     --p: 0;
     --ring-color: var(--ink);
     --track: var(--line-soft);
-    width: 124px; height: 124px;
+    width: 132px; height: 132px;
     border-radius: 50%;
     background: conic-gradient(var(--ring-color) calc(var(--p) * 1%), var(--track) 0);
     display: grid; place-items: center;
@@ -365,26 +375,33 @@ code { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-si
     flex-shrink: 0;
 }
 .ring-inner {
-    width: 100px; height: 100px;
+    width: 108px; height: 108px;
     border-radius: 50%;
     background: var(--bg-elev);
-    display: grid; place-items: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0 12px;
     box-shadow: inset 0 0 0 1px var(--line-soft);
 }
 .ring-value {
     font-family: 'Instrument Serif', Georgia, serif;
-    font-size: 2.1rem;
+    font-size: 2rem;
     line-height: 1;
     color: var(--ring-color);
     font-feature-settings: "tnum";
 }
 .ring-value span { font-size: 0.95rem; margin-left: 1px; }
 .ring-label {
-    font-size: 0.7rem;
+    font-size: 0.56rem;
     text-transform: uppercase;
-    letter-spacing: .1em;
+    letter-spacing: .05em;
+    line-height: 1.2;
     color: var(--ink-mute);
-    margin-top: 4px;
+    margin-top: 5px;
+    max-width: 80px;
 }
 
 .verdict-text p {
