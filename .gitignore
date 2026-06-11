@@ -9,6 +9,7 @@ dataset/celebdf_faces/
 
 # Numpy данные — большие файлы
 dataset/*.npy
+dataset/*.npz
 
 # Обученные модели
 dataset/*.pkl
@@ -30,3 +31,13 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Локальные служебные файлы и заметки (не для публикации)
+.claude/
+.CLAUDE/
+CLAUDE.md
+dataset/.claude/
+**/scheduled_tasks.lock
+presentation_defense_notes.md
+requirements-lock.txt
+~/

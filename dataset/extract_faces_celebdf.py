@@ -6,14 +6,14 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import shutil
 
-# Number of frames to sample per video — must match FF++ pipeline
+# Сколько кадров сэмплировать на видео — должно совпадать с конвейером FF++
 NUM_FRAMES = 10
 
 DATASET_PATH = "celebdf_subset"
 OUTPUT_PATH = "celebdf_faces"
 MODEL_PATH = "blaze_face_short_range.tflite"
 
-# MediaPipe 0.10+ API (replaces deprecated mp.solutions.face_detection)
+# API MediaPipe 0.10+ (заменяет устаревший mp.solutions.face_detection)
 base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
 options = vision.FaceDetectorOptions(
     base_options=base_options,
@@ -40,9 +40,9 @@ def extract_frames(video_path, num_frames=10):
 
 
 def crop_face(frame):
-    """Detect and crop the highest-confidence face. Falls back to centre crop."""
+    """Находит и вырезает лицо с наибольшей уверенностью. Иначе — центральный кроп."""
     h, w = frame.shape[:2]
-    # MediaPipe requires RGB input
+    # MediaPipe требует вход в формате RGB
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
     result = detector.detect(mp_image)
@@ -50,7 +50,7 @@ def crop_face(frame):
     if result.detections:
         best = max(result.detections, key=lambda d: d.categories[0].score)
         bbox = best.bounding_box
-        # 20% padding — identical to extract_faces.py so train and test faces match
+        # запас 20% — как в extract_faces.py, чтобы лица train и test совпадали
         pad_x = int(bbox.width * 0.2)
         pad_y = int(bbox.height * 0.2)
         x1 = max(0, bbox.origin_x - pad_x)
@@ -61,7 +61,7 @@ def crop_face(frame):
         if face.size > 0:
             return face
 
-    # Fallback: central crop so every video still produces at least one embedding
+    # Запасной вариант: центральный кроп, чтобы каждое видео давало хотя бы один эмбеддинг
     margin = int(min(h, w) * 0.2)
     size = min(h, w) - 2 * margin
     cy, cx = h // 2, w // 2
@@ -71,7 +71,7 @@ def crop_face(frame):
 
 print("Starting CelebDF face extraction...")
 
-# Clear output directories before running to avoid stale data accumulation
+# Очищаем выходные папки перед запуском, чтобы не накапливались старые данные
 for folder in ["real", "fake"]:
     path = os.path.join(OUTPUT_PATH, folder)
     if os.path.exists(path):

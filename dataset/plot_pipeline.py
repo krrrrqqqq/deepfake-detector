@@ -1,29 +1,29 @@
 """
 plot_pipeline.py
 ================
-Generate Figure 6 of the thesis: the inference pipeline of the deepfake
-detector developed in this work.
+Строит рисунок 6 диплома: конвейер инференса разработанного в работе
+детектора дипфейков.
 
-Stages (left to right, top row):
-    1. Input video (.mp4)
-    2. Uniform frame sampling (10 frames per video)
-    3. Face detection & crop (MediaPipe BlazeFace, 224x224, +20% padding)
-    4. EfficientNet-B0 backbone, fine-tuned (sigmoid head)
-Stages (right to left, bottom row):
-    5. Per-frame fake probabilities  [p_1, ..., p_10]
-    6. Median aggregation  ->  video-level score s
-    7. Decision rule with fixed uncertainty band [0.40, 0.85]
-    8. Three-way verdict: REAL / UNCERTAIN / FAKE
+Этапы (слева направо, верхний ряд):
+    1. Входное видео (.mp4)
+    2. Равномерное сэмплирование кадров (10 кадров на видео)
+    3. Детекция и вырезание лица (MediaPipe BlazeFace, 224x224, +20% запас)
+    4. Backbone EfficientNet-B0, дообученный (sigmoid-голова)
+Этапы (справа налево, нижний ряд):
+    5. Покадровые fake-вероятности  [p_1, ..., p_10]
+    6. Медианная агрегация  ->  score уровня видео s
+    7. Правило решения с фиксированной полосой неопределённости [0.40, 0.85]
+    8. Трёхзначный вердикт: REAL / UNCERTAIN / FAKE
 
-Dependencies:
+Зависимости:
     pip install matplotlib
 
-Usage:
+Использование:
     python plot_pipeline.py
 
-Output (in current working directory):
-    figure_6_pipeline.png   - 300 DPI raster, ready for Word
-    figure_6_pipeline.svg   - vector, scales without loss of quality
+Вывод (в текущей рабочей директории):
+    figure_6_pipeline.png   - растр 300 DPI, готов для Word
+    figure_6_pipeline.svg   - вектор, масштабируется без потери качества
 """
 
 import matplotlib.pyplot as plt
@@ -57,7 +57,7 @@ def draw_stage(ax, x, y, w, h, title, body, *,
                face=COL_BG, edge=COL_NAVY, linewidth=1.6,
                title_color=COL_NAVY,
                title_fontsize=10.0, body_fontsize=9.0):
-    """Bold title at top of box, body text below."""
+    """Жирный заголовок сверху блока, основной текст ниже."""
     patch = FancyBboxPatch(
         (x - w / 2, y - h / 2), w, h,
         boxstyle="round,pad=0.02,rounding_size=0.04",
@@ -97,7 +97,7 @@ ax.axis("off")
 W = 24
 H = 14
 
-# ---- Top row: stages 1..4 (left -> right)
+# ---- Верхний ряд: этапы 1..4 (слева -> направо)
 TOP_Y = 72
 
 stage1_x = 20
@@ -125,17 +125,17 @@ draw_stage(ax, stage4_x, TOP_Y, W + 8, H,
            "EfficientNet-B0 (224x224)\nfine-tuned, sigmoid head\nImageNet -> deepfake",
            face=COL_PALE, edge=COL_NAVY, linewidth=2.2)
 
-# Arrows: 1 -> 2 -> 3 -> 4
+# Стрелки: 1 -> 2 -> 3 -> 4
 draw_arrow(ax, stage1_x + W / 2,         TOP_Y, stage2_x - (W + 4) / 2,  TOP_Y)
 draw_arrow(ax, stage2_x + (W + 4) / 2,   TOP_Y, stage3_x - (W + 6) / 2,  TOP_Y)
 draw_arrow(ax, stage3_x + (W + 6) / 2,   TOP_Y, stage4_x - (W + 8) / 2,  TOP_Y)
 
-# Down-curve arrow from stage 4 (top row right) to stage 5 (bottom row right)
+# Стрелка вниз от этапа 4 (справа в верхнем ряду) к этапу 5 (справа в нижнем ряду)
 BOT_Y = 32
 draw_arrow(ax, stage4_x, TOP_Y - H / 2, stage4_x, BOT_Y + H / 2 + 0.5,
            linewidth=2.0)
 
-# ---- Early-exit branch from stage 3: if no face on any frame -> reject
+# ---- Ветка раннего выхода с этапа 3: если ни на одном кадре нет лица -> отказ
 no_face_x = 110
 no_face_y = 51
 no_face_w = 36
@@ -157,7 +157,7 @@ ax.text(no_face_x + no_face_w / 2 + 1, (TOP_Y - H / 2 + no_face_y) / 2 + 4,
         ha="left", va="center",
         fontsize=8.4, color=COL_RED, style="italic")
 
-# ---- Bottom row: stages 5..8 (right -> left)
+# ---- Нижний ряд: этапы 5..8 (справа -> налево)
 stage8_x = 20
 stage7_x = 65
 stage6_x = 110
@@ -183,12 +183,12 @@ draw_stage(ax, stage8_x, BOT_Y, W, H,
            "REAL / UNCERTAIN / FAKE\n+ confidence",
            face="white", edge=COL_NAVY, linewidth=2.2)
 
-# Arrows: 5 -> 6 -> 7 -> 8 (right to left)
+# Стрелки: 5 -> 6 -> 7 -> 8 (справа налево)
 draw_arrow(ax, stage5_x - (W + 8) / 2,   BOT_Y, stage6_x + (W + 6) / 2,  BOT_Y)
 draw_arrow(ax, stage6_x - (W + 6) / 2,   BOT_Y, stage7_x + (W + 4) / 2,  BOT_Y)
 draw_arrow(ax, stage7_x - (W + 4) / 2,   BOT_Y, stage8_x + W / 2,        BOT_Y)
 
-# ---- Verdict legend (3 colored chips) under stage 8
+# ---- Легенда вердикта (3 цветные плашки) под этапом 8
 chip_w = 22
 chip_h = 4.0
 chip_x = stage8_x
@@ -210,7 +210,7 @@ draw_stage(ax, chip_x,  4, chip_w, chip_h,
            face=COL_FAKE_BG, edge=COL_FAKE_ED, linewidth=1.4,
            title_color=COL_FAKE_ED, body_fontsize=9.0)
 
-# ---- Side annotations (training-time info, in red)
+# ---- Боковые аннотации (информация об обучении, красным)
 ax.annotate(
     "Two-phase fine-tuning:\nPhase 1 (warm-up, 1 ep, lr=1e-3, frozen base)\n"
     "Phase 2 (top 80 layers, 30 ep, lr=5e-5)",
@@ -221,7 +221,7 @@ ax.annotate(
     arrowprops=dict(arrowstyle="-", color=COL_RED, linewidth=0.8),
 )
 
-# ---- Title and caption
+# ---- Заголовок и подпись
 ax.text(100, 96, "Figure 6 — Inference pipeline of the proposed deepfake detector",
         ha="center", va="center",
         fontsize=12, color=COL_TEXT, fontweight="bold")

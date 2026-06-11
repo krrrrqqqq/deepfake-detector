@@ -8,7 +8,7 @@ df = pd.read_csv("dataset_labels.csv")
 print("Original distribution:")
 print(df["label"].value_counts())
 
-# Stratified split 80/20
+# Стратифицированное разбиение 80/20
 train_df, val_df = train_test_split(
     df,
     test_size=0.2,

@@ -36,7 +36,7 @@
             <div class="hero-copy">
                 <span class="eyebrow">
                     <span class="eyebrow-dot"></span>
-                    Fine-tuned on 2,390 videos &middot; ROC-AUC 0.898
+                    Fine-tuned on 2,675 videos &middot; ROC-AUC 0.890
                 </span>
                 <h1 class="display">
                     Check if <em>it&rsquo;s a</em>
@@ -116,30 +116,30 @@
 
         <section class="metrics" id="metrics">
             <div class="metrics-head">
-                <span class="eyebrow"><span class="eyebrow-dot"></span>Held-out test set &middot; 359 videos</span>
+                <span class="eyebrow"><span class="eyebrow-dot"></span>Held-out test set &middot; 402 videos</span>
                 <h2>Honest numbers, with the caveats.</h2>
                 <p>Per-source breakdown is shown alongside overall metrics &mdash; aggregate accuracy can hide source-specific recall collapse on imbalanced data.</p>
             </div>
             <div class="metric-grid">
-                <div class="metric"><span class="metric-num">0.898</span><span class="metric-name">ROC-AUC</span></div>
-                <div class="metric"><span class="metric-num">0.794</span><span class="metric-name">Balanced Acc.</span></div>
-                <div class="metric"><span class="metric-num">0.787</span><span class="metric-name">F1-score</span></div>
-                <div class="metric"><span class="metric-num">0.827</span><span class="metric-name">Real recall</span></div>
-                <div class="metric"><span class="metric-num">0.761</span><span class="metric-name">Fake recall</span></div>
+                <div class="metric"><span class="metric-num">0.890</span><span class="metric-name">ROC-AUC</span></div>
+                <div class="metric"><span class="metric-num">0.804</span><span class="metric-name">Balanced Acc.</span></div>
+                <div class="metric"><span class="metric-num">0.786</span><span class="metric-name">F1-score</span></div>
+                <div class="metric"><span class="metric-num">0.802</span><span class="metric-name">Real recall</span></div>
+                <div class="metric"><span class="metric-num">0.806</span><span class="metric-name">Fake recall</span></div>
                 <div class="metric"><span class="metric-num">0.79</span><span class="metric-name">Threshold</span></div>
             </div>
             <div class="per-source">
                 <div class="per-source-row">
                     <span class="src-name">FaceForensics++</span>
-                    <span class="src-bar"><span style="--w: 63.5%"></span></span>
-                    <span class="src-val">BalAcc 0.635</span>
+                    <span class="src-bar"><span style="--w: 71.5%"></span></span>
+                    <span class="src-val">BalAcc 0.715</span>
                 </div>
                 <div class="per-source-row">
                     <span class="src-name">Celeb-DF v2</span>
-                    <span class="src-bar"><span style="--w: 83.3%"></span></span>
-                    <span class="src-val">BalAcc 0.833</span>
+                    <span class="src-bar"><span style="--w: 86.1%"></span></span>
+                    <span class="src-val">BalAcc 0.861</span>
                 </div>
-                <p class="caveat">FF++ real recall is limited by data starvation &mdash; only 300 FF++ real videos exist in the corpus. The uncertainty band absorbs most borderline FF++ real videos into UNCERTAIN rather than forcing a FAKE verdict.</p>
+                <p class="caveat">FF++ real recall (0.625) is still the lowest cell &mdash; FF++ real frames cluster near the per-frame decision boundary. The uncertainty band absorbs most borderline FF++ real videos into UNCERTAIN rather than forcing a FAKE verdict.</p>
             </div>
         </section>
     </main>

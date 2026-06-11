@@ -1,27 +1,27 @@
 """
 plot_taxonomy.py
 ================
-Generate Figure 5 of the thesis: a taxonomy of deepfake-detection methods,
-with the approach adopted in this work (fine-tuned spatial CNN with transfer
-learning) highlighted.
+Строит рисунок 5 диплома: таксономию методов детекции дипфейков с выделением
+подхода, принятого в данной работе (дообученная пространственная CNN с
+переносом обучения).
 
-Layout:
-    Level 1: Deepfake Detection Methods
-    Level 2: Classical | Deep Learning
-    Level 3: (under DL) Spatial | Temporal | Frequency | Multimodal |
-             Self-supervised
-    Level 4: (under Spatial) Frozen features + classifier (baseline) |
-             Fine-tuned with transfer learning [THIS WORK]
+Компоновка:
+    Уровень 1: Методы детекции дипфейков
+    Уровень 2: Классические | Глубокое обучение
+    Уровень 3: (под DL) Пространственные | Временны́е | Частотные | Мультимодальные |
+               Самообучение
+    Уровень 4: (под Spatial) Замороженные признаки + классификатор (базлайн) |
+               Дообучение с переносом обучения [ЭТА РАБОТА]
 
-Dependencies:
+Зависимости:
     pip install matplotlib
 
-Usage:
+Использование:
     python plot_taxonomy.py
 
-Output (in current working directory):
-    figure_5_taxonomy.png   - 300 DPI raster, ready for Word
-    figure_5_taxonomy.svg   - vector, scales without loss of quality
+Вывод (в текущей рабочей директории):
+    figure_5_taxonomy.png   - растр 300 DPI, готов для Word
+    figure_5_taxonomy.svg   - вектор, масштабируется без потери качества
 """
 
 import matplotlib.pyplot as plt
@@ -64,7 +64,7 @@ def draw_box(ax, x, y, w, h, text, *,
 
 
 def draw_connector(ax, x1, y1, x2, y2, *, color=COL_GRAY, linewidth=1.2):
-    """Connector: vertical from (x1, y1), horizontal at midpoint, vertical to (x2, y2)."""
+    """Соединитель: вертикаль от (x1, y1), горизонталь по середине, вертикаль к (x2, y2)."""
     y_mid = (y1 + y2) / 2
     ax.plot([x1, x1], [y1, y_mid], color=color, linewidth=linewidth, zorder=1)
     ax.plot([x1, x2], [y_mid, y_mid], color=color, linewidth=linewidth, zorder=1)
@@ -76,14 +76,14 @@ ax.set_xlim(0, 140)
 ax.set_ylim(0, 100)
 ax.axis("off")
 
-# -------- Level 1: Root
+# -------- Уровень 1: Корень
 ROOT_X, ROOT_Y = 70, 92
 draw_box(ax, ROOT_X, ROOT_Y, 44, 6,
          "Deepfake Detection Methods",
          face=COL_NAVY, edge=COL_NAVY, text_color="white",
          fontsize=11.5, fontweight="bold")
 
-# -------- Level 2: Classical | Deep Learning
+# -------- Уровень 2: Классические | Глубокое обучение
 L2_Y = 76
 classical_x = 25
 dl_x = 95
@@ -98,14 +98,14 @@ draw_box(ax, dl_x, L2_Y, 26, 6,
 draw_connector(ax, ROOT_X, ROOT_Y - 3, classical_x, L2_Y + 3)
 draw_connector(ax, ROOT_X, ROOT_Y - 3, dl_x,        L2_Y + 3)
 
-# -------- Level 3 under Classical
+# -------- Уровень 3 под «Классические»
 draw_box(ax, classical_x, 60, 28, 7,
          "Hand-crafted features\n+ classical ML (SVM, RF)",
          face=COL_BG, edge=COL_GRAY, fontsize=9.0)
 draw_connector(ax, classical_x, L2_Y - 3, classical_x, 60 + 3.5,
                color=COL_GRAY)
 
-# -------- Level 3 under Deep Learning: 5 families
+# -------- Уровень 3 под «Глубокое обучение»: 5 семейств
 L3_Y = 60
 families = [
     ("Spatial CNN",          61),
@@ -128,7 +128,7 @@ for name, x in families:
                    color=COL_NAVY if is_chosen else COL_GRAY,
                    linewidth=1.6 if is_chosen else 1.2)
 
-# -------- Level 4 under Spatial CNN: baseline | this work
+# -------- Уровень 4 под «Spatial CNN»: базлайн | эта работа
 L4_Y = 38
 spatial_x = 61
 baseline_x = 47
@@ -152,7 +152,7 @@ draw_connector(ax, spatial_x, L3_Y - 3.25, baseline_x, L4_Y + 5.5,
 draw_connector(ax, spatial_x, L3_Y - 3.25, chosen_x,   L4_Y + 5.5,
                color=COL_RED, linewidth=1.8)
 
-# -------- Annotation under chosen approach
+# -------- Аннотация под выбранным подходом
 ax.annotate(
     "EfficientNet-B0, 224x224\nImageNet pretraining\nTwo-phase fine-tuning",
     xy=(chosen_x, L4_Y - 5.5),
@@ -162,7 +162,7 @@ ax.annotate(
     arrowprops=dict(arrowstyle="-", color=COL_RED, linewidth=1.0),
 )
 
-# -------- Legend / key
+# -------- Легенда / пояснение
 ax.add_patch(FancyBboxPatch(
     (5, 5), 130, 6.5,
     boxstyle="round,pad=0.02,rounding_size=0.05",
@@ -175,7 +175,7 @@ ax.text(70, 8.3,
         ha="center", va="center", fontsize=9.5, color=COL_TEXT,
         style="italic", zorder=3)
 
-# Title
+# Заголовок
 ax.text(70, 99, "Figure 5 — Taxonomy of deepfake-detection methods",
         ha="center", va="top",
         fontsize=12, color=COL_TEXT, fontweight="bold")

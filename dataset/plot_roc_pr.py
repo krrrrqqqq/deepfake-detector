@@ -1,20 +1,20 @@
 """
 plot_roc_pr.py
 ==============
-Generate ROC and Precision-Recall curves for the production
-EfficientNet-B0 detector on the held-out test split.
+Строит кривые ROC и Precision-Recall для рабочего детектора EfficientNet-B0
+на отложенном тестовом разбиении.
 
-Reads:
+Читает:
   - efficientnet_combined.keras
   - test_split.csv
-  - model_config.json (for img_size, threshold, frames_per_video)
-  - faces_dataset/ and celebdf_faces/
+  - model_config.json (img_size, threshold, frames_per_video)
+  - faces_dataset/ и celebdf_faces/
 
-Writes:
+Сохраняет:
   - figure_10_roc_pr.png
   - figure_10_roc_pr.svg
 
-Run from dataset/:
+Запуск из dataset/:
     python plot_roc_pr.py
 """
 
@@ -41,7 +41,7 @@ CONFIG_PATH       = "model_config.json"
 BATCH_SIZE        = 32
 
 
-# ── Load config ───────────────────────────────────────────────────────────────
+# ── Загрузка конфигурации ───────────────────────────────────────────────────────
 with open(CONFIG_PATH) as f:
     cfg = json.load(f)
 
@@ -51,18 +51,18 @@ FRAMES_PER_VIDEO = cfg["frames_per_video"]
 THRESHOLD        = cfg["threshold"]
 
 
-# ── Load model ────────────────────────────────────────────────────────────────
+# ── Загрузка модели ──────────────────────────────────────────────────────────
 print(f"Loading model: {MODEL_PATH}")
 model = tf.keras.models.load_model(MODEL_PATH)
 
 
-# ── Load test split ───────────────────────────────────────────────────────────
+# ── Загрузка тестового разбиения ─────────────────────────────────────────────
 test_df = pd.read_csv(TEST_SPLIT_PATH)
 test_videos = {row["video_id"]: int(row["label"]) for _, row in test_df.iterrows()}
 print(f"Test videos: {len(test_videos)}")
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Вспомогательные функции ────────────────────────────────────────────────────
 def get_video_id(filepath: str) -> str:
     return "_".join(os.path.basename(filepath).split("_")[:-1])
 
@@ -101,7 +101,7 @@ all_index = {**index_faces(FF_FACES_DIR, "ff__"),
              **index_faces(CELEBDF_FACES_DIR, "cdf__")}
 
 
-# ── Inference ─────────────────────────────────────────────────────────────────
+# ── Инференс ──────────────────────────────────────────────────────────────────
 print("Running inference on test set ...")
 vid_scores = []
 vid_labels = []
@@ -125,14 +125,14 @@ print(f"Evaluated {len(vid_labels)} videos "
       f"(real: {np.sum(vid_labels == 0)}, fake: {np.sum(vid_labels == 1)})")
 
 
-# ── Compute ROC and PR ────────────────────────────────────────────────────────
+# ── Вычисление ROC и PR ───────────────────────────────────────────────────────
 fpr, tpr, roc_thresholds = roc_curve(vid_labels, vid_scores)
 roc_auc = roc_auc_score(vid_labels, vid_scores)
 
 precision, recall, pr_thresholds = precision_recall_curve(vid_labels, vid_scores)
 pr_auc = average_precision_score(vid_labels, vid_scores)
 
-# Operating point at τ from config
+# Рабочая точка при τ из конфига
 y_pred = (vid_scores >= THRESHOLD).astype(int)
 tp = int(np.sum((y_pred == 1) & (vid_labels == 1)))
 fp = int(np.sum((y_pred == 1) & (vid_labels == 0)))
@@ -149,7 +149,7 @@ print(f"Operating point at tau={THRESHOLD}: TPR={op_tpr:.3f}, "
       f"FPR={op_fpr:.3f}, Precision={op_prec:.3f}")
 
 
-# ── Plot ──────────────────────────────────────────────────────────────────────
+# ── Построение графиков ───────────────────────────────────────────────────────
 plt.rcParams.update({
     "font.family": "serif",
     "font.size":   11,
@@ -183,7 +183,7 @@ ax.grid(alpha=0.3)
 ax = axes[1]
 ax.plot(recall, precision, color="#1f4e79", linewidth=2.0,
         label=f"PR curve (AP = {pr_auc:.3f})")
-# Baseline = prevalence
+# Базовая линия = доля положительного класса (prevalence)
 prevalence = float(np.mean(vid_labels))
 ax.axhline(prevalence, color="grey", linestyle="--", linewidth=1.0,
            label=f"Random classifier (prevalence = {prevalence:.3f})")
@@ -209,5 +209,5 @@ out_png = "figure_10_roc_pr.png"
 out_svg = "figure_10_roc_pr.svg"
 fig.savefig(out_png, dpi=200, bbox_inches="tight")
 fig.savefig(out_svg, bbox_inches="tight")
-print(f"\nSaved → {out_png}")
-print(f"Saved → {out_svg}")
+print(f"\nSaved -> {out_png}")
+print(f"Saved -> {out_svg}")

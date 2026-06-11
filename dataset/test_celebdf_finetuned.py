@@ -1,12 +1,12 @@
 """
-Evaluate the fine-tuned EfficientNet-B4 model on the Celeb-DF v2 test set.
+Оценка дообученной модели EfficientNet-B4 на тестовом наборе Celeb-DF v2.
 
-Inference:
-  - For each video: run all available frames through the model
-  - Average per-frame sigmoid probabilities → video-level score
-  - Threshold at 0.5 for FAKE / REAL prediction
+Инференс:
+  - Для каждого видео: прогон всех доступных кадров через модель
+  - Усреднение покадровых сигмоидных вероятностей → score уровня видео
+  - Порог 0.5 для предсказания FAKE / REAL
 
-Run from the dataset/ directory:
+Запуск из каталога dataset/:
     python test_celebdf_finetuned.py
 """
 
@@ -22,36 +22,36 @@ from sklearn.metrics import (
     f1_score, confusion_matrix, roc_auc_score,
 )
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# ── Конфигурация ─────────────────────────────────────────────────────────────
 FACES_DIR        = "celebdf_faces"
 IMG_SIZE         = 380
 BATCH_SIZE       = 16
 FRAMES_PER_VIDEO = 10
-# Set this to the optimal threshold printed by finetune_efficientnet.py /
-# finetune_combined.py. The scripts search val F1 over [0.25, 0.75] — using
-# that value here avoids re-tuning on the test set.
+# Установите оптимальный порог, который печатают finetune_efficientnet.py /
+# finetune_combined.py. Скрипты ищут val F1 на [0.25, 0.75] — использование
+# этого значения здесь избавляет от повторной настройки на тесте.
 THRESHOLD        = 0.5
 
-# Auto-detect model: prefer the combined model if present, fall back to the
-# standard fine-tuned one. Override by setting MODEL_PATH explicitly.
+# Автоопределение модели: предпочитаем combined-модель, если есть, иначе
+# откатываемся на стандартную дообученную. Можно переопределить MODEL_PATH вручную.
 _CANDIDATES = ["efficientnet_combined.keras", "efficientnet_finetuned.keras"]
 MODEL_PATH = next((p for p in _CANDIDATES if os.path.exists(p)), _CANDIDATES[-1])
 
 
-# ── Load model ─────────────────────────────────────────────────────────────────
+# ── Загрузка модели ──────────────────────────────────────────────────────────
 print(f"Loading fine-tuned model from {MODEL_PATH} ...")
 model = tf.keras.models.load_model(MODEL_PATH)
 print("Model loaded.\n")
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Вспомогательные функции ────────────────────────────────────────────────────
 def get_video_id(filepath: str) -> str:
-    """Strip frame-index suffix to recover the video identifier."""
+    """Убирает суффикс с индексом кадра, восстанавливая идентификатор видео."""
     return "_".join(os.path.basename(filepath).split("_")[:-1])
 
 
 def load_frame(path: str) -> np.ndarray | None:
-    """Read image, resize, BGR->RGB, preprocess for EfficientNet."""
+    """Читает изображение, ресайзит, BGR->RGB, препроцессинг для EfficientNet."""
     img = cv2.imread(path)
     if img is None:
         return None
@@ -64,8 +64,8 @@ def load_frame(path: str) -> np.ndarray | None:
 
 def predict_video(frame_paths: list[str]) -> float:
     """
-    Return average sigmoid probability (fake=1) for a set of frame paths.
-    Processes frames in one batch if they fit, otherwise in chunks.
+    Возвращает среднюю сигмоидную вероятность (fake=1) для набора путей к кадрам.
+    Обрабатывает кадры одним батчем, если влезают, иначе частями.
     """
     images = []
     for p in sorted(frame_paths)[:FRAMES_PER_VIDEO]:
@@ -81,7 +81,7 @@ def predict_video(frame_paths: list[str]) -> float:
     return float(np.mean(probs))
 
 
-# ── Build video -> [frame_paths] mapping ───────────────────────────────────────
+# ── Построение отображения видео -> [пути к кадрам] ───────────────────────────
 video_probs  = []
 video_labels = []
 video_ids    = []
@@ -95,7 +95,7 @@ for label_name, label in [("real", 0), ("fake", 1)]:
     all_frames = sorted(glob.glob(os.path.join(folder, "*.jpg")) +
                         glob.glob(os.path.join(folder, "*.png")))
 
-    # Group frames by video
+    # Группируем кадры по видео
     videos: dict[str, list[str]] = defaultdict(list)
     for fp in all_frames:
         videos[get_video_id(fp)].append(fp)
@@ -113,7 +113,7 @@ for label_name, label in [("real", 0), ("fake", 1)]:
 
 print()
 
-# ── Metrics ────────────────────────────────────────────────────────────────────
+# ── Метрики ──────────────────────────────────────────────────────────────────
 video_probs  = np.array(video_probs)
 video_labels = np.array(video_labels)
 y_pred       = (video_probs >= THRESHOLD).astype(int)

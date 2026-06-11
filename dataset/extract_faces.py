@@ -59,7 +59,7 @@ def crop_face(frame):
         if face.size > 0:
             return face
 
-    # Fallback: центральный кроп
+    # Запасной вариант: центральный кроп
     margin = int(min(h, w) * 0.2)
     size = min(h, w) - 2 * margin
     cy, cx = h // 2, w // 2

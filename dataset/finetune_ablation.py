@@ -1,22 +1,22 @@
 """
 finetune_ablation.py
 ====================
-Re-train EfficientNet-B0 with one methodology choice disabled, for the
-ablation study reported in section 3.3.4 of the diploma document.
+Переобучает EfficientNet-B0 с отключённым одним методологическим решением — для
+исследования по абляции, описанного в разделе 3.3.4 диплома.
 
-Variants
+Варианты
 --------
-- production       full method (sanity check; should reproduce ~0.898 ROC-AUC)
-- no_weighting     class_weight only (no per-sample weighting across cells)
-- bn_trainable     BatchNormalization left in training mode during Phase 2
-- asymmetric_aug   heavier augmentation on real frames than on fake frames
+- production       полный метод (sanity-check; должен воспроизвести ~0.89 ROC-AUC)
+- no_weighting     только class_weight (без повесового взвешивания по ячейкам)
+- bn_trainable     BatchNormalization оставлен в режиме обучения в фазе 2
+- asymmetric_aug   более сильная аугментация настоящих кадров, чем фейковых
 
-All artefacts are written under dataset/ablations/{variant}/ so the
-production checkpoint, threshold, and test split are not overwritten.
-The held-out test split is reused from the existing test_split.csv at
-the repository root so all variants are evaluated on the same videos.
+Все артефакты пишутся в dataset/ablations/{variant}/, чтобы не перезаписать
+рабочий чекпойнт, порог и тестовое разбиение. Отложенный тест переиспользуется
+из существующего test_split.csv в корне репозитория, чтобы все варианты
+оценивались на одних и тех же видео.
 
-Run from dataset/:
+Запуск из dataset/:
     python finetune_ablation.py --variant no_weighting
     python finetune_ablation.py --variant bn_trainable
     python finetune_ablation.py --variant asymmetric_aug
@@ -44,19 +44,19 @@ from sklearn.metrics import (
 )
 
 
-# ── Variant selection ─────────────────────────────────────────────────────────
+# ── Выбор варианта ─────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "--variant",
     required=True,
     choices=["production", "no_weighting", "bn_trainable", "asymmetric_aug"],
-    help="Which methodology choice to disable",
+    help="Какое методологическое решение отключить",
 )
 args = parser.parse_args()
 VARIANT = args.variant
 
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# ── Конфигурация ─────────────────────────────────────────────────────────────
 FF_FACES_DIR      = "faces_dataset"
 CELEBDF_FACES_DIR = "celebdf_faces"
 ABLATION_DIR      = os.path.join("ablations", VARIANT)
@@ -64,7 +64,7 @@ MODEL_PATH        = os.path.join(ABLATION_DIR, "model.keras")
 CONFIG_PATH       = os.path.join(ABLATION_DIR, "model_config.json")
 LOG_PATH          = os.path.join(ABLATION_DIR, "train_log.json")
 
-# Reuse the production test split so all variants are evaluated on identical videos.
+# Переиспользуем рабочее тестовое разбиение, чтобы все варианты оценивались на тех же видео.
 PRODUCTION_TEST_SPLIT = "test_split.csv"
 
 IMG_SIZE         = 224
@@ -73,7 +73,7 @@ UNFREEZE_N       = 80
 LR_WARMUP        = 1e-3
 LR_FINETUNE      = 5e-5
 EPOCHS_WARMUP    = 1
-EPOCHS_FT        = 15      # production EarlyStopping fired at epoch 15 — match it
+EPOCHS_FT        = 15      # в рабочем прогоне EarlyStopping сработал на эпохе 15 — повторяем
 FRAMES_PER_VIDEO = 10
 RANDOM_SEED      = 42
 
@@ -85,7 +85,7 @@ print(f"Artefacts → {ABLATION_DIR}/")
 print("=" * 70)
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Вспомогательные функции ────────────────────────────────────────────────────
 def get_video_id(filepath: str) -> str:
     return "_".join(os.path.basename(filepath).split("_")[:-1])
 
@@ -111,7 +111,7 @@ def load_frame_numpy(path: str):
     return img.astype("float32")
 
 
-# ── Collect all frames ─────────────────────────────────────────────────────────
+# ── Сбор всех кадров ───────────────────────────────────────────────────────────
 ff_real, ff_fake = collect_frames(FF_FACES_DIR, prefix="ff__")
 cdf_real, cdf_fake = collect_frames(CELEBDF_FACES_DIR, prefix="cdf__")
 all_real = ff_real + cdf_real
@@ -121,11 +121,11 @@ print(f"FF++     — real: {len(ff_real):>5}, fake: {len(ff_fake):>5}")
 print(f"Celeb-DF — real: {len(cdf_real):>5}, fake: {len(cdf_fake):>5}")
 
 
-# ── Reuse production test split, regenerate train/val deterministically ───────
-# The production run used random_state=42 with the same 70/15/15 split on the
-# same real_vids and fake_vids lists. Reproducing that split here gives the
-# same train/val partitions, and the test partition is verified against
-# test_split.csv to guard against drift.
+# ── Переиспользуем рабочий тест, детерминированно восстанавливаем train/val ────
+# Рабочий прогон использовал random_state=42 с тем же разбиением 70/15/15 на тех
+# же списках real_vids и fake_vids. Воспроизведение разбиения здесь даёт те же
+# train/val-части, а тестовая часть сверяется с test_split.csv для защиты от
+# расхождений.
 real_vids = sorted(set(vid for _, vid in all_real))
 fake_vids = sorted(set(vid for _, vid in all_fake))
 
@@ -142,7 +142,7 @@ train_set = set(real_train_v + fake_train_v)
 val_set   = set(real_val_v   + fake_val_v)
 test_set  = set(real_test_v  + fake_test_v)
 
-# Sanity check: regenerated test set must match the production test_split.csv
+# Проверка: восстановленный тест должен совпадать с рабочим test_split.csv
 prod_test_df = pd.read_csv(PRODUCTION_TEST_SPLIT)
 prod_test_ids = set(prod_test_df["video_id"].tolist())
 if prod_test_ids != test_set:
@@ -172,7 +172,7 @@ print(f"Train — real: {len(r_tr):>5}, fake: {len(f_tr):>5}, total: {len(train_
 print(f"Val   — real: {len(r_va):>5}, fake: {len(f_va):>5}, total: {len(val_all)}")
 
 
-# ── Sample weights / class_weight per variant ─────────────────────────────────
+# ── Повесовые веса / class_weight в зависимости от варианта ───────────────────
 train_paths   = [p for p, _, _ in train_all]
 train_labels  = [l for _, _, l in train_all]
 train_sources = ["ff" if v.startswith("ff__") else "cdf"
@@ -188,9 +188,9 @@ n_cells = len(cell_counts)
 class_weight_arg = None
 
 if VARIANT == "no_weighting":
-    # Disable per-sample weighting across (source, label) cells.
-    # Fall back to plain class_weight (only balances real/fake), which is the
-    # baseline this scheme is designed to replace.
+    # Отключаем повесовое взвешивание по ячейкам (источник, метка).
+    # Откатываемся на обычный class_weight (балансирует только настоящие/фейк) —
+    # это базлайн, который наша схема призвана заменить.
     n_real = sum(1 for l in train_labels if l == 0)
     n_fake = sum(1 for l in train_labels if l == 1)
     class_weight_arg = {
@@ -202,7 +202,7 @@ if VARIANT == "no_weighting":
     print(f"  class_weight: real={class_weight_arg[0]:.4f}, "
           f"fake={class_weight_arg[1]:.4f}")
 else:
-    # Production scheme: per-sample weights across all four (source, label) cells.
+    # Рабочая схема: повесовые веса по всем четырём ячейкам (источник, метка).
     sample_weight_map = {
         cell: n_total / (n_cells * count)
         for cell, count in cell_counts.items()
@@ -217,7 +217,7 @@ else:
         print(f"  {name}: weight = {w:.4f}  ({cell_counts[(src, lbl)]} frames)")
 
 
-# ── Group validation frames by video ──────────────────────────────────────────
+# ── Группировка кадров валидации по видео ──────────────────────────────────────
 val_videos = defaultdict(lambda: {"paths": [], "label": None})
 for path, vid, label in val_all:
     val_videos[vid]["paths"].append(path)
@@ -235,10 +235,10 @@ val_paths  = [p for p, _, _ in val_all]
 val_labels = [l for _, _, l in val_all]
 
 
-# Dataset is built with or without per-sample weights depending on the variant.
-# Keras 3 forbids combining class_weight with sample_weight, so for the
-# no_weighting variant we drop the weight tuple element entirely and let
-# class_weight do the balancing instead.
+# Датасет строится с повесовыми весами или без них в зависимости от варианта.
+# Keras 3 запрещает совмещать class_weight с sample_weight, поэтому для варианта
+# no_weighting мы полностью убираем элемент-вес из кортежа и доверяем
+# балансировку class_weight.
 USE_SAMPLE_WEIGHTS = (class_weight_arg is None)
 
 
@@ -267,7 +267,7 @@ def load_image_val(path: tf.Tensor, label: tf.Tensor):
 
 
 def _augment_core(img, is_real_scalar):
-    """Core augmentation logic — applied identically by both signatures."""
+    """Ядро логики аугментации — применяется одинаково обеими сигнатурами."""
     if VARIANT == "asymmetric_aug":
         def heavy():
             x = tf.image.random_jpeg_quality(img, min_jpeg_quality=30, max_jpeg_quality=70)
@@ -288,7 +288,7 @@ def _augment_core(img, is_real_scalar):
 
         return tf.cond(is_real_scalar, heavy, light)
     else:
-        # Symmetric augmentation (production policy).
+        # Симметричная аугментация (рабочая политика).
         x = tf.image.random_jpeg_quality(img, min_jpeg_quality=70, max_jpeg_quality=100)
         x = tf.cast(x, tf.float32)
         x = tf.image.random_flip_left_right(x)
@@ -344,7 +344,7 @@ val_ds = (
 )
 
 
-# ── Diagnostic callback ───────────────────────────────────────────────────────
+# ── Диагностический колбэк ─────────────────────────────────────────────────────
 class OutputDistribution(tf.keras.callbacks.Callback):
     def __init__(self, val_ds, val_labels):
         super().__init__()
@@ -374,7 +374,7 @@ class OutputDistribution(tf.keras.callbacks.Callback):
 diag_callback = OutputDistribution(val_ds, val_labels)
 
 
-# ── Model ──────────────────────────────────────────────────────────────────────
+# ── Модель ───────────────────────────────────────────────────────────────────
 base = EfficientNetB0(
     weights="imagenet",
     include_top=False,
@@ -390,7 +390,7 @@ out = layers.Dense(1, activation="sigmoid", name="output")(x)
 model = Model(base.input, out)
 
 
-# ── Phase 1: warm-up ──────────────────────────────────────────────────────────
+# ── Фаза 1: прогрев ────────────────────────────────────────────────────────────
 print(f"\nPhase 1: warm-up ({EPOCHS_WARMUP} epoch)")
 model.compile(
     optimizer=tf.keras.optimizers.Adam(LR_WARMUP),
@@ -400,28 +400,28 @@ model.compile(
 
 fit_kwargs_p1 = dict(epochs=EPOCHS_WARMUP, validation_data=val_ds)
 if class_weight_arg is not None:
-    # When using class_weight, the dataset still yields 3-tuples (img, lbl, w=1.0).
-    # Keras applies class_weight on top of the per-sample weight.
+    # При использовании class_weight датасет всё равно выдаёт тройки (img, lbl, w=1.0).
+    # Keras применяет class_weight поверх повесового веса.
     fit_kwargs_p1["class_weight"] = class_weight_arg
 
 model.fit(train_ds, **fit_kwargs_p1)
 
 
-# ── Phase 2: fine-tune ────────────────────────────────────────────────────────
+# ── Фаза 2: дообучение ─────────────────────────────────────────────────────────
 print(f"\nPhase 2: fine-tune (up to {EPOCHS_FT} epochs)")
 base.trainable = True
 for layer in base.layers[:-UNFREEZE_N]:
     layer.trainable = False
 
-# Variant-specific BN handling.
+# Обработка BN в зависимости от варианта.
 n_bn_frozen = 0
 n_bn_trainable = 0
 for layer in base.layers:
     if isinstance(layer, tf.keras.layers.BatchNormalization):
         if VARIANT == "bn_trainable":
-            # Ablation: leave BN trainable, allowing it to re-estimate
-            # running statistics from small training batches.
-            # Only flip those whose surrounding block is unfrozen.
+            # Абляция: оставляем BN обучаемым, позволяя ему заново оценивать
+            # бегущие статистики на маленьких обучающих батчах.
+            # Переключаем только те, чей окружающий блок разморожен.
             if layer.trainable:
                 n_bn_trainable += 1
         else:
@@ -460,7 +460,7 @@ if class_weight_arg is not None:
 model.fit(train_ds, **fit_kwargs_p2)
 
 
-# ── Video-level threshold tuning on validation ────────────────────────────────
+# ── Подбор порога на уровне видео по валидации ────────────────────────────────
 print("\nValidation video-level threshold tuning …")
 best_model = tf.keras.models.load_model(MODEL_PATH)
 
@@ -491,7 +491,7 @@ for thr in np.arange(0.20, 0.80, 0.01):
 print(f"Optimal threshold: {best_thr:.2f}  (val BalAcc = {best_bal:.4f})")
 
 
-# ── Save config + log ─────────────────────────────────────────────────────────
+# ── Сохранение конфигурации и лога ─────────────────────────────────────────────
 config = {
     "variant":          VARIANT,
     "threshold":        best_thr,

@@ -64,11 +64,11 @@ for label_name in ["real", "fake"]:
         images = np.array(images)
         embeddings = model.predict(images, batch_size=BATCH_SIZE, verbose=0)
 
-        # Level 2: concat mean + std across frames (3584-dim).
-        # std captures frame-to-frame inconsistency — a key deepfake artefact.
+        # Уровень 2: конкатенация mean + std по кадрам (3584-мерный вектор).
+        # std отражает несогласованность между кадрами — ключевой артефакт дипфейка.
         video_embedding = np.concatenate([
-            np.mean(embeddings, axis=0),   # 1792-dim: average appearance
-            np.std(embeddings,  axis=0),   # 1792-dim: temporal flicker / artifacts
+            np.mean(embeddings, axis=0),   # 1792 измерения: усреднённый облик
+            np.std(embeddings,  axis=0),   # 1792 измерения: временно́е мерцание / артефакты
         ])
 
         X.append(video_embedding)

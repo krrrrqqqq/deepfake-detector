@@ -87,14 +87,14 @@ for label_name, label in [("real", 0), ("fake", 1)]:
 
         images = np.array(images)
 
-        # Batch inference
+        # Пакетный инференс
         embeddings = model.predict(images, batch_size=BATCH_SIZE, verbose=0)
 
-        # Level 2: concat mean + std (must match extract_features.py exactly).
-        # std captures temporal inconsistency — a key deepfake artefact.
+        # Уровень 2: конкатенация mean + std (должна в точности совпадать с extract_features.py).
+        # std отражает временну́ю несогласованность — ключевой артефакт дипфейка.
         video_embedding = np.concatenate([
-            np.mean(embeddings, axis=0),   # 1792-dim
-            np.std(embeddings,  axis=0),   # 1792-dim
+            np.mean(embeddings, axis=0),   # 1792 измерения
+            np.std(embeddings,  axis=0),   # 1792 измерения
         ])
 
         X.append(video_embedding)

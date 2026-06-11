@@ -1,24 +1,24 @@
 """
 test_combined.py
 ================
-Evaluate the fine-tuned model on the held-out test split.
+Оценка дообученной модели на отложенном тестовом разбиении.
 
-Reads model_config.json (produced by finetune_combined.py) for:
-  - threshold   — optimal decision boundary (tuned on validation F1)
-  - img_size    — input resolution the model expects
-  - aggregation — how per-frame probabilities are combined (default: median)
+Читает model_config.json (создаётся finetune_combined.py) для получения:
+  - threshold   — оптимальный порог решения (подобран по balanced accuracy на val)
+  - img_size    — входное разрешение, ожидаемое моделью
+  - aggregation — способ свёртки покадровых вероятностей (по умолчанию: median)
 
-For each test video the script:
-  1. Loads all available face-crop frames.
-  2. Uniformly subsamples to FRAMES_PER_VIDEO if there are more.
-  3. Runs per-frame inference.
-  4. Aggregates per-frame probabilities to a single video-level score.
-  5. Applies the threshold to produce REAL / FAKE prediction.
+Для каждого тестового видео скрипт:
+  1. Загружает все доступные кадры с вырезанными лицами.
+  2. Равномерно прореживает до FRAMES_PER_VIDEO, если кадров больше.
+  3. Прогоняет покадровый инференс.
+  4. Сворачивает покадровые вероятности в единый score уровня видео.
+  5. Применяет порог для получения предсказания REAL / FAKE.
 
-Prints: ROC-AUC, F1, balanced accuracy, precision, recall, accuracy,
-confusion matrix, and a comparison table of aggregation methods.
+Печатает: ROC-AUC, F1, balanced accuracy, precision, recall, accuracy,
+матрицу ошибок и сравнительную таблицу способов агрегации.
 
-Run from dataset/:
+Запуск из dataset/:
     python test_combined.py
 """
 
@@ -37,13 +37,13 @@ from sklearn.metrics import (
     average_precision_score,
 )
 
-# ── Config (defaults — overridden by model_config.json if present) ─────────────
+# ── Конфигурация (значения по умолчанию — переопределяются model_config.json) ──
 FF_FACES_DIR      = "faces_dataset"
 CELEBDF_FACES_DIR = "celebdf_faces"
 TEST_SPLIT_PATH   = "test_split.csv"
 CONFIG_PATH       = "model_config.json"
 
-# Fallback defaults if config is missing
+# Значения по умолчанию, если конфиг отсутствует
 MODEL_PATH       = "efficientnet_combined.keras"
 IMG_SIZE         = 224
 FRAMES_PER_VIDEO = 10
@@ -52,7 +52,7 @@ AGGREGATION      = "median"
 BATCH_SIZE       = 32
 
 
-# ── Load config ───────────────────────────────────────────────────────────────
+# ── Загрузка конфигурации ───────────────────────────────────────────────────────
 if os.path.isfile(CONFIG_PATH):
     with open(CONFIG_PATH) as f:
         cfg = json.load(f)
@@ -72,13 +72,13 @@ else:
     print(f"  Run finetune_combined.py first to generate it.")
 
 
-# ── Load model ─────────────────────────────────────────────────────────────────
+# ── Загрузка модели ──────────────────────────────────────────────────────────
 print(f"\nLoading model from {MODEL_PATH} …")
 model = tf.keras.models.load_model(MODEL_PATH)
 print(f"Model loaded.  Input shape: {model.input_shape}")
 
 
-# ── Load test split ────────────────────────────────────────────────────────────
+# ── Загрузка тестового разбиения ─────────────────────────────────────────────
 test_df = pd.read_csv(TEST_SPLIT_PATH)
 test_videos = {row["video_id"]: int(row["label"]) for _, row in test_df.iterrows()}
 n_test_real = sum(1 for l in test_videos.values() if l == 0)
@@ -87,24 +87,24 @@ n_test_fake = sum(1 for l in test_videos.values() if l == 1)
 print(f"\nTest split: {len(test_df)} videos "
       f"(real: {n_test_real}, fake: {n_test_fake})")
 
-# Label audit
+# Проверка меток
 print("\n── Label audit (test_split.csv) ──")
 print(f"  label=0 (real): {n_test_real} videos")
 print(f"  label=1 (fake): {n_test_fake} videos")
 print(f"  Convention: real=0, fake=1  ✓")
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Вспомогательные функции ────────────────────────────────────────────────────
 def get_video_id(filepath: str) -> str:
     return "_".join(os.path.basename(filepath).split("_")[:-1])
 
 
 def load_frame(path: str):
-    """Load face image: BGR→RGB, resize, return float32 in [0, 255].
+    """Загружает изображение лица: BGR→RGB, ресайз, float32 в [0, 255].
 
-    EfficientNetB0 has include_preprocessing=True (default) — it does ImageNet
-    normalisation internally. Pre-normalising here would double-normalise
-    and produce wrong predictions.
+    У EfficientNetB0 include_preprocessing=True (по умолчанию) — он делает
+    ImageNet-нормализацию внутри. Предварительная нормализация здесь привела бы
+    к двойной нормализации и неверным предсказаниям.
     """
     img = cv2.imread(path)
     if img is None:
@@ -116,9 +116,9 @@ def load_frame(path: str):
 
 def sample_frames_uniform(paths: list[str], max_frames: int) -> list[str]:
     """
-    Uniformly subsample frame paths if there are more than max_frames.
-    Face-extraction scripts already sample 10 uniform frames per video,
-    so this is a safety net — not the primary temporal sampling.
+    Равномерно прореживает пути кадров, если их больше max_frames.
+    Скрипты извлечения лиц уже берут 10 равномерных кадров на видео,
+    так что это подстраховка, а не основное временно́е сэмплирование.
     """
     paths = sorted(paths)
     if len(paths) <= max_frames:
@@ -128,7 +128,7 @@ def sample_frames_uniform(paths: list[str], max_frames: int) -> list[str]:
 
 
 def aggregate_probs(probs: np.ndarray, method: str = "median") -> float:
-    """Aggregate per-frame probabilities into a single video score."""
+    """Сворачивает покадровые вероятности в единый score уровня видео."""
     if method == "median":
         return float(np.median(probs))
     if method == "mean":
@@ -141,7 +141,7 @@ def aggregate_probs(probs: np.ndarray, method: str = "median") -> float:
     raise ValueError(f"Unknown aggregation: {method}")
 
 
-# ── Index face images ──────────────────────────────────────────────────────────
+# ── Индексация изображений лиц ──────────────────────────────────────────────────
 def index_faces(faces_dir: str, prefix: str) -> dict[str, list[str]]:
     result = defaultdict(list)
     for label_name in ["real", "fake"]:
@@ -161,10 +161,10 @@ all_index = {**index_faces(FF_FACES_DIR, "ff__"),
 print(f"Indexed {len(all_index)} videos total")
 
 
-# ── Run inference on test videos ──────────────────────────────────────────────
-# Store per-frame probs so we can compare aggregation methods afterwards
-video_frame_probs = {}   # vid_id → np.array of per-frame probs
-video_labels_map  = {}   # vid_id → int label
+# ── Инференс по тестовым видео ──────────────────────────────────────────────────
+# Сохраняем покадровые вероятности, чтобы потом сравнить способы агрегации
+video_frame_probs = {}   # vid_id → np.array покадровых вероятностей
+video_labels_map  = {}   # vid_id → метка (int)
 missing = 0
 
 for vid_id, label in sorted(test_videos.items()):
@@ -196,7 +196,7 @@ print(f"\nEvaluated {len(vid_ids)} test videos "
 print(f"Sampled frames per video: {FRAMES_PER_VIDEO}")
 
 
-# ── Aggregation method comparison ─────────────────────────────────────────────
+# ── Сравнение способов агрегации ────────────────────────────────────────────────
 methods = ["mean", "median", "top3_mean", "max"]
 
 print(f"\n{'='*70}")
@@ -222,7 +222,7 @@ for method in methods:
           f"{bal_acc:>8.4f} {prec:>8.4f} {rec:>8.4f}{marker}")
 
 
-# ── Primary metrics (using configured aggregation + threshold) ────────────────
+# ── Основные метрики (с агрегацией и порогом из конфига) ──────────────────────
 vid_scores = np.array(
     [aggregate_probs(video_frame_probs[v], AGGREGATION) for v in vid_ids])
 y_pred = (vid_scores >= THRESHOLD).astype(int)
@@ -256,7 +256,7 @@ if cm.shape == (2, 2):
     tn, fp, fn, tp = cm.ravel()
     print(f"  TN={tn}  FP={fp}  FN={fn}  TP={tp}")
 
-# ── Per-frame probability distribution ────────────────────────────────────────
+# ── Распределение покадровых вероятностей ─────────────────────────────────────
 all_frame_probs_real = np.concatenate(
     [video_frame_probs[v] for v in vid_ids if video_labels_map[v] == 0])
 all_frame_probs_fake = np.concatenate(
@@ -273,11 +273,11 @@ print(f"  Separation:  {np.mean(all_frame_probs_fake) - np.mean(all_frame_probs_
       f"(fake mean - real mean; >0 = correct direction)")
 
 
-# ── Per-source breakdown (FF++ vs Celeb-DF) ───────────────────────────────────
-# Overall recall hides per-source performance. After fixing real-vs-fake
-# imbalance by adding Celeb-DF real videos, a within-real imbalance can
-# appear (FF++ real is ~3× smaller than Celeb-DF real). This block splits
-# the test set by video-id prefix to expose per-source recall.
+# ── Разбивка по источникам (FF++ vs Celeb-DF) ─────────────────────────────────
+# Общий recall скрывает качество по источникам. После устранения дисбаланса
+# настоящие-vs-фейк добавлением настоящих видео Celeb-DF может возникнуть
+# дисбаланс внутри настоящих (FF++ real ~3× меньше, чем Celeb-DF real). Этот
+# блок делит тест по префиксу video-id, чтобы показать recall по источникам.
 print(f"\n{'='*60}")
 print("Per-source breakdown")
 print(f"{'='*60}")
@@ -300,7 +300,7 @@ for prefix, name in [("ff__", "FaceForensics++"), ("cdf__", "Celeb-DF v2")]:
 
     if n_real == 0 or n_fake == 0:
         acc = float(np.mean(src_preds == src_labels))
-        print(f"    Accuracy: {acc:.3f}  (single-class subset)")
+        print(f"    Accuracy: {acc:.3f}  (single-class subset)")  # подвыборка из одного класса
         continue
 
     cm_src = confusion_matrix(src_labels, src_preds, labels=[0, 1])

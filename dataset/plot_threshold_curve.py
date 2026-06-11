@@ -1,24 +1,28 @@
 """
 plot_threshold_curve.py
 =======================
-Reproduce the validation split (same RANDOM_SEED = 42 as finetune_combined.py),
-score all validation videos with the trained model, and plot
-balanced accuracy vs decision threshold over the same grid used at
-training time (np.arange(0.20, 0.80, 0.01)).
+Воспроизводит валидационное разбиение (тот же RANDOM_SEED = 42, что и в
+finetune_combined.py), прогоняет все валидационные видео через обученную модель
+и строит график сбалансированной точности (balanced accuracy) в зависимости от
+порога решения на той же сетке, что использовалась при обучении
+(np.arange(0.20, 0.80, 0.01)).
 
-The optimum on this curve is the threshold persisted to
-model_config.json (τ = 0.79).
+Красный маркер показывает порог, сохранённый в model_config.json (τ = 0.79).
+ПРИМЕЧАНИЕ: после переобучения 2026-06-11 безусловный оптимум по сетке
+переобучился на валидацию (~0.30) и лежит ниже порога по recall настоящих,
+поэтому τ выбран как argmax balanced accuracy при условии real recall >= 0.80
+и равен 0.79 — маркер не совпадает с пиком кривой.
 
-Reads:
+Читает:
   - efficientnet_combined.keras
   - model_config.json
-  - faces_dataset/ and celebdf_faces/
+  - faces_dataset/ и celebdf_faces/
 
-Writes:
+Сохраняет:
   - figure_11_threshold_curve.png
   - figure_11_threshold_curve.svg
 
-Run from dataset/:
+Запуск из dataset/:
     python plot_threshold_curve.py
 """
 
@@ -43,7 +47,7 @@ RANDOM_SEED       = 42
 BATCH_SIZE        = 32
 
 
-# ── Load config ───────────────────────────────────────────────────────────────
+# ── Загрузка конфигурации ───────────────────────────────────────────────────────
 with open(CONFIG_PATH) as f:
     cfg = json.load(f)
 
@@ -53,7 +57,7 @@ FRAMES_PER_VIDEO = cfg["frames_per_video"]
 THRESHOLD        = cfg["threshold"]
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Вспомогательные функции ────────────────────────────────────────────────────
 def get_video_id(filepath: str) -> str:
     return "_".join(os.path.basename(filepath).split("_")[:-1])
 
@@ -87,7 +91,7 @@ def collect_frames(faces_dir, prefix):
     return real_frames, fake_frames
 
 
-# ── Reconstruct the same 70/15/15 split as finetune_combined.py ──────────────
+# ── Воспроизводим то же разбиение 70/15/15, что в finetune_combined.py ─────────
 print("Reconstructing validation split (RANDOM_SEED = 42) ...")
 ff_real, ff_fake     = collect_frames(FF_FACES_DIR, "ff__")
 cdf_real, cdf_fake   = collect_frames(CELEBDF_FACES_DIR, "cdf__")
@@ -113,19 +117,19 @@ print(f"Validation videos: {len(val_set)} "
       f"({len(real_val_v)} real, {len(fake_val_v)} fake)")
 
 
-# ── Index face images, restricted to validation videos ───────────────────────
+# ── Индексация изображений лиц, только для валидационных видео ─────────────────
 val_index = defaultdict(list)
 for path, vid in all_real + all_fake:
     if vid in val_set:
         val_index[vid].append(path)
 
 
-# ── Load model ────────────────────────────────────────────────────────────────
+# ── Загрузка модели ──────────────────────────────────────────────────────────
 print(f"Loading model: {MODEL_PATH}")
 model = tf.keras.models.load_model(MODEL_PATH)
 
 
-# ── Inference on validation videos ───────────────────────────────────────────
+# ── Инференс по валидационным видео ───────────────────────────────────────────
 print("Running inference on validation videos ...")
 vid_scores = []
 vid_labels = []
@@ -146,19 +150,23 @@ vid_labels = np.array(vid_labels)
 print(f"Scored {len(vid_labels)} validation videos")
 
 
-# ── Sweep threshold grid ─────────────────────────────────────────────────────
+# ── Перебор порогов по сетке ──────────────────────────────────────────────────
+REAL_RECALL_FLOOR = 0.80
 grid = np.arange(0.20, 0.80 + 1e-9, 0.01)
-balaccs = []
+balaccs, realrecalls = [], []
 for t in grid:
     preds = (vid_scores >= t).astype(int)
     balaccs.append(balanced_accuracy_score(vid_labels, preds))
+    real_mask = (vid_labels == 0)
+    realrecalls.append(float(np.mean(preds[real_mask] == 0)))
 balaccs = np.array(balaccs)
+realrecalls = np.array(realrecalls)
 
 best_idx = int(np.argmax(balaccs))
 best_t   = float(grid[best_idx])
 best_ba  = float(balaccs[best_idx])
 
-# Also compute the BalAcc at the persisted threshold for the annotation
+# Также считаем BalAcc при сохранённом пороге для подписи на графике
 saved_idx = int(np.argmin(np.abs(grid - THRESHOLD)))
 saved_ba  = float(balaccs[saved_idx])
 
@@ -166,7 +174,7 @@ print(f"\nGrid optimum: tau = {best_t:.2f}, BalAcc = {best_ba:.4f}")
 print(f"Persisted tau = {THRESHOLD}, BalAcc on val = {saved_ba:.4f}")
 
 
-# ── Plot ─────────────────────────────────────────────────────────────────────
+# ── Построение графика ────────────────────────────────────────────────────────
 plt.rcParams.update({
     "font.family": "serif",
     "font.size":   11,
@@ -177,19 +185,25 @@ plt.rcParams.update({
 
 fig, ax = plt.subplots(figsize=(8.5, 5.0))
 
-ax.plot(grid, balaccs, color="#1f4e79", linewidth=2.0,
+# Показываем только рабочую область (>= 0.50); безусловный пик BalAcc около 0.30
+# лежит ниже порога по recall настоящих и всё равно исключён из выбора.
+PLOT_FROM = 0.50
+m = grid >= PLOT_FROM
+
+ax.plot(grid[m], balaccs[m], color="#1f4e79", linewidth=2.0,
         label="Validation balanced accuracy")
 ax.axvline(THRESHOLD, color="#c0392b", linestyle="--", linewidth=1.2, alpha=0.8)
 ax.scatter([THRESHOLD], [saved_ba], color="#c0392b", s=90, zorder=5,
            label=f"Selected τ = {THRESHOLD}  (BalAcc = {saved_ba:.4f})")
 
-ax.set_xlim([0.18, 0.82])
-ax.set_ylim([min(balaccs) - 0.01, max(balaccs) + 0.012])
+ax.set_xlim([PLOT_FROM - 0.02, 0.82])
+ax.set_ylim([min(balaccs[m]) - 0.01, max(balaccs[m]) + 0.012])
 ax.set_xlabel("Decision threshold τ")
 ax.set_ylabel("Balanced accuracy on validation set")
 ax.set_title("Figure 11 — Validation balanced accuracy vs decision threshold\n"
-             f"(grid np.arange(0.20, 0.80, 0.01); N = {len(vid_labels)} videos)")
-ax.legend(loc="lower right")
+             f"(operating region; selected τ = {THRESHOLD}; "
+             f"N = {len(vid_labels)} videos)")
+ax.legend(loc="lower right", framealpha=0.95)
 ax.grid(alpha=0.3)
 
 fig.tight_layout()
@@ -198,5 +212,5 @@ out_png = "figure_11_threshold_curve.png"
 out_svg = "figure_11_threshold_curve.svg"
 fig.savefig(out_png, dpi=200, bbox_inches="tight")
 fig.savefig(out_svg, bbox_inches="tight")
-print(f"\nSaved → {out_png}")
-print(f"Saved → {out_svg}")
+print(f"\nSaved -> {out_png}")
+print(f"Saved -> {out_svg}")

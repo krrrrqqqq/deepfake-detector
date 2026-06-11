@@ -2,11 +2,11 @@ import os
 import random
 import shutil
 
-# Take ALL available real videos (Celeb-real + YouTube-real) to fix the
-# class imbalance that was causing real-video recall of 0.61. Fake is
-# still subsampled to 300 to keep ~1:1 balance against the 900 FF++ fakes
-# already in the combined dataset.
-random.seed(42)  # deterministic fake subsample
+# Берём ВСЕ доступные настоящие видео (Celeb-real + YouTube-real), чтобы
+# устранить дисбаланс классов, из-за которого recall настоящих видео был 0.61.
+# Фейки по-прежнему подвыбираются до 300, чтобы держать баланс ~1:1 против
+# 900 фейков FF++, уже имеющихся в объединённом датасете.
+random.seed(42)  # детерминированная подвыборка фейков
 
 BASE_PATH = "Celeb-DF-v2"
 OUTPUT_PATH = "celebdf_subset"
@@ -21,7 +21,7 @@ FAKE_PATH = os.path.join(BASE_PATH, "Celeb-synthesis")
 os.makedirs(os.path.join(OUTPUT_PATH, "real"), exist_ok=True)
 os.makedirs(os.path.join(OUTPUT_PATH, "fake"), exist_ok=True)
 
-# собираем real видео (все доступные)
+# собираем настоящие видео (все доступные)
 real_videos = []
 
 for p in REAL_PATHS:

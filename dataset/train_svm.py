@@ -13,7 +13,7 @@ y = np.load("y_train.npy")
 print("Original shape:", X.shape)
 print(f"Class distribution - Real: {np.sum(y==0)}, Fake: {np.sum(y==1)}")
 
-# Undersample fake to match real count (1:1 balance)
+# Прореживаем фейки до числа настоящих (баланс 1:1)
 real_idx = np.where(y == 0)[0]
 fake_idx = np.where(y == 1)[0]
 n_real   = len(real_idx)
@@ -27,16 +27,16 @@ y_bal = y[balanced_idx]
 
 print(f"After undersampling - Real: {np.sum(y_bal==0)}, Fake: {np.sum(y_bal==1)}")
 
-# Split BEFORE fitting scaler (no data leakage)
+# Разбиваем ДО обучения scaler (без утечки данных)
 X_train_raw, X_val_raw, y_train, y_val = train_test_split(
     X_bal, y_bal, test_size=0.2, stratify=y_bal, random_state=42
 )
 
 scaler  = StandardScaler()
-X_train = scaler.fit_transform(X_train_raw)   # fit on train only
+X_train = scaler.fit_transform(X_train_raw)   # обучаем только на train
 X_val   = scaler.transform(X_val_raw)
 
-# L2 normalization -> unit vectors -> linear kernel = cosine similarity
+# L2-нормализация -> единичные векторы -> линейное ядро = косинусная близость
 X_train = normalize(X_train)
 X_val   = normalize(X_val)
 
@@ -44,16 +44,16 @@ print(f"Train size: {len(X_train)}, Val size: {len(X_val)}")
 print(f"Train - Real: {np.sum(y_train==0)}, Fake: {np.sum(y_train==1)}")
 print(f"Val   - Real: {np.sum(y_val==0)},   Fake: {np.sum(y_val==1)}")
 
-# Linear SVM on L2-normalised vectors = cosine similarity classifier.
-# RBF with gamma='scale' degenerates in 1792-dim space after L2-normalise
-# because all pairwise distances collapse to ~sqrt(2), making the kernel
-# matrix nearly uniform (all entries exp(-2) = 0.135).
+# Линейный SVM на L2-нормированных векторах = классификатор по косинусной близости.
+# RBF с gamma='scale' вырождается в 1792-мерном пространстве после L2-нормализации,
+# потому что все попарные расстояния схлопываются к ~sqrt(2), делая матрицу ядра
+# почти однородной (все элементы exp(-2) = 0.135).
 svm = SVC(kernel="linear", C=1.0, class_weight="balanced", probability=False)
 svm.fit(X_train, y_train)
 
 y_pred = svm.predict(X_val)
 
-# ── Metrics ────────────────────────────────────────────────────────────────────
+# ── Метрики ──────────────────────────────────────────────────────────────────
 acc_val  = accuracy_score(y_val, y_pred)
 prec_val = precision_score(y_val, y_pred, zero_division=0)
 rec_val  = recall_score(y_val, y_pred, zero_division=0)
@@ -67,7 +67,7 @@ print(f"Recall:    {rec_val:.4f} ({rec_val*100:.2f}%)")
 print(f"F1-score:  {f1_val:.4f} ({f1_val*100:.2f}%)")
 print("Confusion Matrix:\n", cm)
 
-# Guard: cm.ravel() requires a 2x2 matrix; fails if SVM predicts only one class
+# Защита: cm.ravel() требует матрицу 2x2; падает, если SVM предсказывает один класс
 if cm.shape == (2, 2):
     tn, fp, fn, tp = cm.ravel()
     print(f"\nTN: {tn}, FP: {fp}, FN: {fn}, TP: {tp}")

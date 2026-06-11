@@ -1,44 +1,43 @@
 """
-Fine-tune EfficientNet-B4 on FF++ face images for deepfake detection.
+Дообучение EfficientNet-B4 на лицах FF++ для детекции дипфейков.
 
-Two-phase training
+Двухфазное обучение
+-------------------
+Фаза 1 — прогрев (EPOCHS_WARMUP эпох, lr=1e-3):
+    База EfficientNet заморожена. Обучается только добавленная Dense-голова.
+
+Фаза 2 — дообучение (EPOCHS_FT эпох, lr=1e-5):
+    Размораживаются верхние UNFREEZE_N слоёв EfficientNet.
+    Очень низкий LR сохраняет знания ImageNet, адаптируясь к артефактам дипфейка.
+
+Разбиение по видео
 ------------------
-Phase 1 — warm-up (EPOCHS_WARMUP epochs, lr=1e-3):
-    EfficientNet base is frozen. Only the added Dense head is trained.
+Все кадры одного видео попадают в одну часть (train или val).
 
-Phase 2 — fine-tune (EPOCHS_FT epochs, lr=1e-5):
-    Top UNFREEZE_N layers of EfficientNet are unfrozen.
-    Very low LR preserves ImageNet knowledge while adapting to deepfake artefacts.
+Балансировка классов
+--------------------
+Фейковые кадры прореживаются до числа настоящих (соотношение 1:1) перед
+построением TF Dataset. Это надёжнее class_weight при дисбалансе 1:3 —
+class_weight даёт нестабильность масштаба градиента и всё равно приводит к
+смещённым предсказаниям (TN=144, FP=336 в предыдущем прогоне).
 
-Video-level split
------------------
-All frames of one video go to the same split (train or val).
+Аугментация
+-----------
+- Случайное качество JPEG (40-95): важнейшая аугментация для кросс-датасетной
+  обобщаемости. FF++ использует сжатие c23; Celeb-DF — другой кодек. Если модель
+  видит только один уровень качества, она выучивает артефакты сжатия как сигнал
+  фейка, а не саму манипуляцию.
+- Джиттер тона / насыщенности: устойчивость в цветовом пространстве.
+- Отражение, яркость, контраст: стандартная геометрическая/фотометрическая аугментация.
 
-Class balancing
----------------
-Fake frames are undersampled to match the real frame count (1:1 ratio)
-before the TF Dataset is built. This is more reliable than class_weight
-at 1:3 imbalance — class_weight causes gradient scale instability and
-still produces biased predictions (TN=144, FP=336 in the previous run).
+Подбор порога
+-------------
+После обучения на валидации ищется порог, максимизирующий F1. Результат
+печатается, чтобы можно было задать THRESHOLD в test_celebdf_finetuned.py.
 
-Augmentation
-------------
-- Random JPEG quality (40-95): the most important augmentation for
-  cross-dataset generalisation. FF++ uses c23 compression; Celeb-DF uses
-  a different encoder. If the model sees only one quality level it learns
-  the compression artefacts as the fake signal, not the actual manipulation.
-- Hue / saturation jitter: colour-domain robustness.
-- Flip, brightness, contrast: standard geometric/photometric augmentation.
-
-Threshold optimisation
-----------------------
-After training, the validation set is used to find the threshold that
-maximises F1. The result is printed so you can set THRESHOLD in
-test_celebdf_finetuned.py.
-
-Saved artefacts
----------------
-efficientnet_finetuned.keras  — best checkpoint (by val_accuracy)
+Сохраняемые артефакты
+---------------------
+efficientnet_finetuned.keras  — лучший чекпойнт (по val_accuracy)
 """
 
 import os
@@ -55,21 +54,21 @@ from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score, confusion_matrix,
 )
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# ── Конфигурация ─────────────────────────────────────────────────────────────
 FACES_DIR     = "faces_dataset"
 MODEL_PATH    = "efficientnet_finetuned.keras"
 IMG_SIZE      = 380
 BATCH_SIZE    = 16
-UNFREEZE_N    = 50       # top N EfficientNet layers to unfreeze in Phase 2
+UNFREEZE_N    = 50       # сколько верхних слоёв EfficientNet разморозить в фазе 2
 LR_WARMUP     = 1e-3
 LR_FINETUNE   = 1e-5
 EPOCHS_WARMUP = 10
 EPOCHS_FT     = 30
 
 
-# ── Video-level split ──────────────────────────────────────────────────────────
+# ── Разбиение по видео ───────────────────────────────────────────────────────
 def get_video_id(filepath: str) -> str:
-    """Drop the frame-index suffix to get the video identifier."""
+    """Убирает суффикс с индексом кадра, получая идентификатор видео."""
     return "_".join(os.path.basename(filepath).split("_")[:-1])
 
 
@@ -83,7 +82,7 @@ fake_vids = sorted(set(get_video_id(f) for f in fake_frames))
 
 print(f"Unique videos   - real: {len(real_vids)}, fake: {len(fake_vids)}")
 
-# Split by VIDEO ID so no frame leaks across the boundary
+# Разбиваем по VIDEO ID, чтобы ни один кадр не утёк через границу
 train_rv, val_rv = train_test_split(real_vids, test_size=0.2, random_state=42)
 train_fv, val_fv = train_test_split(fake_vids, test_size=0.2, random_state=42)
 
@@ -95,8 +94,8 @@ train_pairs += [(f, 1) for f in fake_frames if get_video_id(f) in train_fv_set]
 val_pairs    = [(f, 0) for f in real_frames if get_video_id(f) in val_rv_set]
 val_pairs   += [(f, 1) for f in fake_frames if get_video_id(f) in val_fv_set]
 
-# Undersample fake training frames to 1:1 ratio.
-# Handles imbalance in the data itself — more reliable than class_weight at 1:3.
+# Прореживаем фейковые обучающие кадры до соотношения 1:1.
+# Устраняет дисбаланс в самих данных — надёжнее class_weight при 1:3.
 real_train_pairs = [(p, l) for p, l in train_pairs if l == 0]
 fake_train_pairs = [(p, l) for p, l in train_pairs if l == 1]
 rng_bal = np.random.default_rng(0)
@@ -118,38 +117,38 @@ print(f"Val   frames: {len(val_paths)}  "
 
 # ── TF Dataset ─────────────────────────────────────────────────────────────────
 def load_image(path: tf.Tensor, label: tf.Tensor):
-    """Load and resize; keep uint8 so random_jpeg_quality can be applied."""
+    """Загружает и ресайзит; оставляет uint8, чтобы можно было применить random_jpeg_quality."""
     raw = tf.io.read_file(path)
     img = tf.image.decode_jpeg(raw, channels=3)          # uint8 RGB
     img = tf.image.resize(img, [IMG_SIZE, IMG_SIZE])
-    img = tf.cast(img, tf.uint8)                         # resize returns float — cast back
+    img = tf.cast(img, tf.uint8)                         # resize возвращает float — приводим обратно
     return img, tf.cast(label, tf.float32)
 
 
 def augment(img: tf.Tensor, label: tf.Tensor):
     """
-    Augmentation pipeline for training frames.
+    Конвейер аугментации для обучающих кадров.
 
-    Stage 1 (uint8)  — JPEG quality simulation.
-    Stage 2 ([0,1])  — hue / saturation jitter (these ops require [0,1] range).
-    Stage 3 ([-1,1]) — EfficientNet scaling, then flip / brightness / contrast.
+    Этап 1 (uint8)  — имитация качества JPEG.
+    Этап 2 ([0,1])  — джиттер тона / насыщенности (эти операции требуют диапазон [0,1]).
+    Этап 3 ([-1,1]) — масштабирование EfficientNet, затем отражение / яркость / контраст.
 
-    JPEG quality (40-95) is the most important augmentation here: it forces
-    the model to detect actual face manipulation rather than compression
-    level, which is the single biggest driver of cross-dataset degradation.
+    Качество JPEG (40-95) — важнейшая аугментация здесь: она заставляет модель
+    распознавать саму манипуляцию лица, а не уровень сжатия, который является
+    главной причиной деградации между датасетами.
     """
-    # --- uint8: codec diversity ---
+    # --- uint8: разнообразие кодеков ---
     img = tf.image.random_jpeg_quality(img, min_jpeg_quality=40, max_jpeg_quality=95)
 
-    # --- [0, 1] float: colour augmentation ---
+    # --- float [0, 1]: цветовая аугментация ---
     img = tf.cast(img, tf.float32) / 255.0
     img = tf.image.random_hue(img, max_delta=0.05)
     img = tf.image.random_saturation(img, lower=0.7, upper=1.3)
 
-    # --- EfficientNet scale: [0,1] -> [-1,1] (same as preprocess_input) ---
+    # --- масштаб EfficientNet: [0,1] -> [-1,1] (как preprocess_input) ---
     img = img * 2.0 - 1.0
 
-    # --- any float range: geometric / intensity ---
+    # --- любой float-диапазон: геометрия / интенсивность ---
     img = tf.image.random_flip_left_right(img)
     img = tf.image.random_brightness(img, max_delta=0.15)
     img = tf.image.random_contrast(img, lower=0.85, upper=1.15)
@@ -157,8 +156,8 @@ def augment(img: tf.Tensor, label: tf.Tensor):
 
 
 def preprocess_val(img: tf.Tensor, label: tf.Tensor):
-    """Deterministic preprocessing for validation — no augmentation."""
-    img = tf.cast(img, tf.float32) / 127.5 - 1.0        # matches preprocess_input
+    """Детерминированный препроцессинг для валидации — без аугментации."""
+    img = tf.cast(img, tf.float32) / 127.5 - 1.0        # соответствует preprocess_input
     return img, label
 
 
@@ -180,14 +179,14 @@ val_ds = (
 )
 
 
-# ── Model ──────────────────────────────────────────────────────────────────────
+# ── Модель ───────────────────────────────────────────────────────────────────
 base = EfficientNetB4(
     weights="imagenet",
     include_top=False,
     pooling=None,
     input_shape=(IMG_SIZE, IMG_SIZE, 3),
 )
-base.trainable = False      # frozen for warm-up
+base.trainable = False      # заморожена на время прогрева
 
 x   = base.output
 x   = layers.GlobalAveragePooling2D(name="gap")(x)
@@ -200,7 +199,7 @@ print(f"Trainable params (warm-up): "
       f"{sum(tf.size(v).numpy() for v in model.trainable_variables):,}")
 
 
-# ── Phase 1: warm-up ───────────────────────────────────────────────────────────
+# ── Фаза 1: прогрев ────────────────────────────────────────────────────────────
 print("\n" + "="*60)
 print("Phase 1: Warm-up - training Dense head only")
 print("="*60)
@@ -211,7 +210,7 @@ model.compile(
     metrics=["accuracy"],
 )
 
-# No class_weight — imbalance is handled by undersampling in the dataset.
+# Без class_weight — дисбаланс устранён прореживанием в датасете.
 model.fit(
     train_ds,
     epochs=EPOCHS_WARMUP,
@@ -225,7 +224,7 @@ model.fit(
 )
 
 
-# ── Phase 2: fine-tune ─────────────────────────────────────────────────────────
+# ── Фаза 2: дообучение ─────────────────────────────────────────────────────────
 print("\n" + "="*60)
 print(f"Phase 2: Fine-tune - unfreeze top {UNFREEZE_N} EfficientNet layers")
 print("="*60)
@@ -237,7 +236,7 @@ for layer in base.layers[:-UNFREEZE_N]:
 n_trainable = sum(tf.size(v).numpy() for v in model.trainable_variables)
 print(f"Trainable params (fine-tune): {n_trainable:,}")
 
-# Recompile with a much lower LR to avoid destroying ImageNet features
+# Перекомпилируем с гораздо меньшим LR, чтобы не разрушить ImageNet-признаки
 model.compile(
     optimizer=tf.keras.optimizers.Adam(LR_FINETUNE),
     loss="binary_crossentropy",
@@ -259,7 +258,7 @@ model.fit(
 )
 
 
-# ── Final validation evaluation ────────────────────────────────────────────────
+# ── Итоговая оценка на валидации ──────────────────────────────────────────────
 print("\n" + "="*60)
 print("Final validation evaluation (best checkpoint)")
 print("="*60)
@@ -275,9 +274,9 @@ for img_batch, lbl_batch in val_ds:
 all_probs = np.array(all_probs)
 all_true  = np.array(all_true)
 
-# Find the threshold that maximises F1 on the validation set.
-# 0.5 is rarely optimal after fine-tuning — the sigmoid output distribution
-# shifts depending on training data composition.
+# Ищем порог, максимизирующий F1 на валидации.
+# 0.5 редко оптимален после дообучения — распределение выхода сигмоиды
+# смещается в зависимости от состава обучающих данных.
 best_thr, best_f1_thr = 0.5, 0.0
 for thr in np.arange(0.25, 0.76, 0.01):
     _pred = (all_probs >= thr).astype(int)

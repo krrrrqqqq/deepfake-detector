@@ -1,19 +1,19 @@
 """
-Deepfake Detector — Flask web application
-==========================================
-Inference: fine-tuned EfficientNet-B0 (224×224) trained on the combined
-FF++ + Celeb-DF dataset.
+Детектор дипфейков — веб-приложение на Flask
+=============================================
+Инференс: дообученная EfficientNet-B0 (224×224), обученная на объединённом
+датасете FF++ + Celeb-DF.
 
-Reads model_config.json (produced by finetune_combined.py) for:
-  - img_size     — input resolution the model expects
-  - threshold    — auto-tuned on the validation set
-  - aggregation  — how per-frame probabilities are combined (default: median)
+Читает model_config.json (создаётся finetune_combined.py) для получения:
+  - img_size     — входное разрешение, которое ожидает модель
+  - threshold    — порог, автоматически подобранный на валидационной выборке
+  - aggregation  — способ свёртки покадровых вероятностей (по умолчанию: median)
 
-Per-frame probabilities are aggregated to a single video-level score and
-compared against the threshold to produce REAL / FAKE.
+Покадровые вероятности агрегируются в единый score уровня видео и
+сравниваются с порогом для получения вердикта REAL / FAKE.
 
-A legacy SVM pipeline is kept as a last-resort fallback for when the
-fine-tuned model is absent.
+Legacy-конвейер на SVM сохранён как резервный путь на случай отсутствия
+дообученной модели.
 """
 
 import os
@@ -27,26 +27,26 @@ from mediapipe.tasks.python import vision
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 
-# ── Paths ──────────────────────────────────────────────────────────────────────
+# ── Пути ─────────────────────────────────────────────────────────────────────
 DATASET_DIR   = os.path.join(os.path.dirname(__file__), "dataset")
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "uploads")
 CONFIG_PATH   = os.path.join(DATASET_DIR, "model_config.json")
 MODEL_PATH    = os.path.join(DATASET_DIR, "efficientnet_combined.keras")
 DETECTOR_PATH = os.path.join(DATASET_DIR, "blaze_face_short_range.tflite")
 
-# ── Constants ──────────────────────────────────────────────────────────────────
+# ── Константы ────────────────────────────────────────────────────────────────
 NUM_FRAMES        = 10
-# Fixed uncertainty band decoupled from the decision threshold: scores below
-# UNCERTAIN_LOW are confidently real, scores above UNCERTAIN_HIGH are
-# confidently fake, anything in between is reported as UNCERTAIN with the raw
-# fake-probability. Bounds chosen so the decision threshold (currently 0.79)
-# falls inside the band — scores right at the boundary are maximally unsure.
+# Фиксированная полоса неопределённости, отвязанная от порога решения: score
+# ниже UNCERTAIN_LOW — уверенно настоящие, выше UNCERTAIN_HIGH — уверенно
+# фейк, всё, что между — выдаётся как UNCERTAIN с сырой fake-вероятностью.
+# Границы выбраны так, что порог решения (сейчас 0.79) попадает внутрь полосы —
+# score прямо на границе максимально неоднозначен.
 UNCERTAIN_LOW     = 0.40
 UNCERTAIN_HIGH    = 0.85
 ALLOWED_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 ALLOWED_VIDEO_EXT = {".mp4", ".avi", ".mov", ".mkv"}
 
-# ── Load model_config.json (defaults if missing) ──────────────────────────────
+# ── Загрузка model_config.json (значения по умолчанию при отсутствии) ─────────
 IMG_SIZE    = 224
 THRESHOLD   = 0.5
 AGGREGATION = "median"
@@ -66,24 +66,25 @@ else:
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 МБ
 
-# ── Load models once at startup ────────────────────────────────────────────────
+# ── Загрузка моделей один раз при старте ──────────────────────────────────────
 print("Loading MediaPipe face detector...")
 _base_opts = python.BaseOptions(model_asset_path=DETECTOR_PATH)
-# min_detection_confidence=0.2 (not 0.4): deepfake artefacts lower BlazeFace's
-# confidence on manipulated faces. On FF++ Deepfakes clips the presenter's face
-# is large and clearly present, yet scores 0.1–0.4 — so a 0.4 cutoff rejected
-# genuine faces as "no face detected". 0.2 recovers them while staying strict
-# enough that truly face-less content (landscape, document) still yields zero
-# detections and is rejected upstream.
+# min_detection_confidence=0.2 (а не 0.4): артефакты дипфейка занижают
+# уверенность BlazeFace на манипулированных лицах. На FF++ Deepfakes клипах
+# лицо ведущего крупное и явно присутствует, но получает оценку 0.1–0.4 —
+# поэтому порог 0.4 отбрасывал настоящие лица как «лицо не найдено». 0.2
+# возвращает их, оставаясь достаточно строгим, чтобы по-настоящему
+# безлицевой контент (пейзаж, документ) по-прежнему давал ноль детекций и
+# отклонялся выше по конвейеру.
 _det_opts  = vision.FaceDetectorOptions(
     base_options=_base_opts,
     min_detection_confidence=0.2,
 )
 detector = vision.FaceDetector.create_from_options(_det_opts)
 
-# Primary: fine-tuned EfficientNet-B0 on combined dataset
+# Основная модель: дообученная EfficientNet-B0 на объединённом датасете
 finetuned_model = None
 if os.path.isfile(MODEL_PATH):
     print(f"Loading fine-tuned model from {MODEL_PATH} ...")
@@ -93,13 +94,13 @@ if os.path.isfile(MODEL_PATH):
 else:
     print(f"Fine-tuned model not found at {MODEL_PATH} — will use SVM fallback")
 
-# Fallback: legacy SVM pipeline (loaded only when needed)
+# Резервный путь: legacy-конвейер на SVM (загружается только при необходимости)
 svm = scaler = feature_model = efn_preprocess = None
 USE_STD = False
 if finetuned_model is None:
     from tensorflow.keras.applications import EfficientNetB4
     from tensorflow.keras.applications.efficientnet import preprocess_input as efn_preprocess
-    from sklearn.preprocessing import normalize  # noqa: F401  (used in predict_svm)
+    from sklearn.preprocessing import normalize  # noqa: F401  (используется в predict_svm)
     print("Loading EfficientNet-B4 + SVM fallback pipeline...")
     feature_model = EfficientNetB4(
         weights="imagenet", include_top=False, pooling="avg",
@@ -114,15 +115,15 @@ if finetuned_model is None:
 print("All models loaded. Ready.\n")
 
 
-# ── Face cropping ──────────────────────────────────────────────────────────────
+# ── Вырезание лица ────────────────────────────────────────────────────────────
 
 def crop_face(frame: np.ndarray) -> np.ndarray | None:
     """
-    Detect highest-confidence face and return it with 20% padding.
-    Returns None when no face is detected. Frames without a face are
-    skipped by collect_faces; if every sampled frame fails detection
-    the request is rejected upstream — running inference on non-face
-    content (landscape, document, animal) produces a meaningless score.
+    Находит лицо с наибольшей уверенностью и возвращает его с запасом 20%.
+    Возвращает None, если лицо не обнаружено. Кадры без лица пропускаются
+    в collect_faces; если детекция провалилась на всех сэмплированных кадрах,
+    запрос отклоняется выше по конвейеру — прогон инференса по не-лицевому
+    контенту (пейзаж, документ, животное) даёт бессмысленный score.
     """
     h, w   = frame.shape[:2]
     rgb    = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -146,10 +147,10 @@ def crop_face(frame: np.ndarray) -> np.ndarray | None:
 
 def prepare_face_for_model(frame: np.ndarray) -> np.ndarray | None:
     """
-    For fine-tuned EfficientNet-B0: BGR→RGB, resize to IMG_SIZE,
-    return float32 in [0, 255]. EfficientNetB0 has
-    include_preprocessing=True, so it does ImageNet normalisation
-    internally — pre-normalising here would double-normalise.
+    Для дообученной EfficientNet-B0: BGR→RGB, ресайз до IMG_SIZE,
+    возврат float32 в диапазоне [0, 255]. У EfficientNetB0 включён
+    include_preprocessing=True, поэтому ImageNet-нормализация делается
+    внутри модели — нормализация здесь привела бы к двойной нормализации.
     """
     face = crop_face(frame)
     if face is None or face.size == 0:
@@ -160,7 +161,7 @@ def prepare_face_for_model(frame: np.ndarray) -> np.ndarray | None:
 
 
 def prepare_face_for_svm(frame: np.ndarray) -> np.ndarray | None:
-    """For legacy SVM: 380×380 with EfficientNet-B4 ImageNet preprocessing."""
+    """Для legacy-SVM: 380×380 с ImageNet-препроцессингом EfficientNet-B4."""
     face = crop_face(frame)
     if face is None or face.size == 0:
         return None
@@ -169,10 +170,10 @@ def prepare_face_for_svm(frame: np.ndarray) -> np.ndarray | None:
     return efn_preprocess(face.astype("float32"))
 
 
-# ── Frame collection ──────────────────────────────────────────────────────────
+# ── Сбор кадров ───────────────────────────────────────────────────────────────
 
 def collect_faces(path: str, prep_fn) -> list[np.ndarray]:
-    """Collect prepared face arrays from an image or video file."""
+    """Собирает подготовленные массивы лиц из файла изображения или видео."""
     ext = os.path.splitext(path)[1].lower()
 
     if ext in ALLOWED_IMAGE_EXT:
@@ -207,7 +208,7 @@ def collect_faces(path: str, prep_fn) -> list[np.ndarray]:
     return faces
 
 
-# ── Inference ─────────────────────────────────────────────────────────────────
+# ── Инференс ──────────────────────────────────────────────────────────────────
 
 def aggregate(probs: np.ndarray, method: str) -> float:
     if method == "mean":      return float(np.mean(probs))
@@ -215,18 +216,18 @@ def aggregate(probs: np.ndarray, method: str) -> float:
     if method == "top3_mean":
         k = min(3, len(probs))
         return float(np.mean(np.sort(probs)[-k:]))
-    return float(np.median(probs))   # default + "median"
+    return float(np.median(probs))   # по умолчанию + "median"
 
 
 def predict_finetuned(faces: list[np.ndarray]) -> tuple[str, float]:
-    """Per-frame inference → aggregate → REAL / UNCERTAIN / FAKE verdict."""
+    """Покадровый инференс → агрегация → вердикт REAL / UNCERTAIN / FAKE."""
     arr   = np.array(faces, dtype="float32")
     probs = finetuned_model.predict(arr, batch_size=16, verbose=0).flatten()
     score = aggregate(probs, AGGREGATION)
 
-    # In the uncertainty band we surface the raw fake-probability so the UI
-    # can show which side the score leans toward, even though no hard label
-    # is claimed.
+    # Внутри полосы неопределённости показываем сырую fake-вероятность, чтобы
+    # UI мог отобразить, в какую сторону клонится score, даже когда жёсткая
+    # метка не выносится.
     if UNCERTAIN_LOW <= score <= UNCERTAIN_HIGH:
         return "UNCERTAIN", round(score * 100, 1)
 
@@ -241,7 +242,7 @@ def predict_finetuned(faces: list[np.ndarray]) -> tuple[str, float]:
 
 
 def predict_svm(faces: list[np.ndarray]) -> tuple[str, float]:
-    """SVM pipeline inference (fallback when fine-tuned model is absent)."""
+    """Инференс конвейера на SVM (резерв при отсутствии дообученной модели)."""
     from sklearn.preprocessing import normalize
 
     arr        = np.array(faces, dtype="float32")
@@ -264,7 +265,7 @@ def predict_svm(faces: list[np.ndarray]) -> tuple[str, float]:
     return label, confidence
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# ── Маршруты ──────────────────────────────────────────────────────────────────
 
 @app.route("/", methods=["GET"])
 def index():
@@ -272,16 +273,16 @@ def index():
 
 
 def _err(message: str):
-    """Uniform JSON error payload for the AJAX front-end."""
+    """Единый JSON-формат ошибки для AJAX-фронтенда."""
     return jsonify(status="error", message=message)
 
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    """Analyse an uploaded video and return a JSON verdict.
+    """Анализирует загруженное видео и возвращает вердикт в виде JSON.
 
-    The browser submits via fetch() and renders the result in place without a
-    page reload. The server deletes its copy of the file after inference.
+    Браузер отправляет запрос через fetch() и отрисовывает результат на месте
+    без перезагрузки страницы. Сервер удаляет свою копию файла после инференса.
     """
     if "file" not in request.files:
         return _err("No file field in request."), 400
@@ -290,18 +291,19 @@ def predict():
     if not file or file.filename == "":
         return _err("No file selected."), 400
 
-    # Derive the extension from the ORIGINAL name. secure_filename() strips all
-    # non-ASCII characters, so a Cyrillic name like "видео.mp4" collapses to
-    # "mp4" and loses its extension entirely — which would wrongly fail the
-    # format check before we ever look for a face. safe_name is only used for
-    # the disk path.
+    # Берём расширение из ОРИГИНАЛЬНОГО имени. secure_filename() вырезает все
+    # не-ASCII символы, поэтому кириллическое имя вроде "видео.mp4" схлопывается
+    # в "mp4" и полностью теряет расширение — из-за чего проверка формата
+    # ошибочно провалилась бы ещё до поиска лица. safe_name используется только
+    # для пути на диске.
     display_name = file.filename
     ext          = os.path.splitext(display_name)[1].lower()
 
-    # This detector is video-based: the model is frame-level and a video-level
-    # verdict comes from median-aggregating per-frame probabilities. Single
-    # images are rejected — one frame has no aggregation and falls outside the
-    # FF++/Celeb-DF video-deepfake scope the model was trained and evaluated on.
+    # Этот детектор работает с видео: модель покадровая, а вердикт уровня видео
+    # получается медианной агрегацией покадровых вероятностей. Одиночные
+    # изображения отклоняются — у одного кадра нет агрегации, и он выходит за
+    # рамки FF++/Celeb-DF видео-дипфейков, на которых модель обучалась и
+    # оценивалась.
     if ext in ALLOWED_IMAGE_EXT:
         return _err("Image input is not supported — this detector is "
                     "video-based. Please upload a video file (MP4, MOV, AVI, "
@@ -311,8 +313,8 @@ def predict():
         return _err(f"Unsupported file type: {ext or 'no extension'}. "
                     "Please upload a video file (MP4, MOV, AVI, MKV)."), 415
 
-    # Build a safe on-disk name; re-attach the validated extension if securing
-    # stripped it (fully non-ASCII basename).
+    # Строим безопасное имя для диска; заново прикрепляем проверенное расширение,
+    # если secure_filename его срезал (полностью не-ASCII базовое имя).
     safe_name = secure_filename(display_name) or "upload"
     if not safe_name.lower().endswith(ext):
         safe_name += ext

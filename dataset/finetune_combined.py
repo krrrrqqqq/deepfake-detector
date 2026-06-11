@@ -1,40 +1,41 @@
 """
 finetune_combined.py
 ====================
-Fine-tune EfficientNet-B0 on combined FF++ + Celeb-DF face images.
+Дообучение EfficientNet-B0 на объединённых лицах FF++ + Celeb-DF.
 
-Key design decisions
---------------------
-- **EfficientNetB0 (224×224)** instead of B4 (380×380):
-  ~5× faster on CPU, minimal accuracy loss for in-distribution binary
-  classification.  B4's extra capacity only matters for cross-dataset
-  generalisation, which we explicitly dropped.
+Ключевые проектные решения
+--------------------------
+- **EfficientNetB0 (224×224)** вместо B4 (380×380):
+  ~5× быстрее на CPU при минимальной потере точности для бинарной
+  классификации в пределах распределения. Дополнительная ёмкость B4 важна
+  только для кросс-датасетной обобщаемости, от которой мы сознательно отказались.
 
-- **Symmetric augmentation** for both classes:
-  Asymmetric augmentation (heavy for real, light for fake) teaches the model
-  to detect *augmentation artefacts* rather than *deepfake artefacts*.
-  Result: ~86% train accuracy but 50% val accuracy.
+- **Симметричная аугментация** для обоих классов:
+  Асимметричная аугментация (сильная для настоящих, слабая для фейков) учит
+  модель распознавать *артефакты аугментации*, а не *артефакты дипфейка*.
+  Результат: ~86% accuracy на train, но 50% на val.
 
-- **Per-sample weights** across (source, label) cells instead of class_weight:
-  No data is discarded. Rebalances the four cells FF++/Celeb-DF × real/fake
-  equally, so the model doesn't learn "real = celebrity-style" just because
-  Celeb-DF contributes ~3× more real frames than FF++.
+- **Повесовое взвешивание** по ячейкам (источник, метка) вместо class_weight:
+  Данные не отбрасываются. Уравнивает четыре ячейки FF++/Celeb-DF × настоящие/фейк,
+  чтобы модель не выучивала «настоящее = стиль знаменитостей» просто потому, что
+  Celeb-DF даёт ~3× больше настоящих кадров, чем FF++.
 
-- **Monitor val_auc** (not val_accuracy):
-  AUC is threshold-independent and robust to class imbalance.
+- **Мониторинг val_auc** (а не val_accuracy):
+  AUC не зависит от порога и устойчив к дисбалансу классов.
 
-- **Video-level threshold optimisation** after training:
-  Validation frames are grouped by video, aggregated via median, then the
-  threshold that maximises F1 is saved to model_config.json.
+- **Подбор порога на уровне видео** после обучения:
+  Кадры валидации группируются по видео, агрегируются медианой, затем порог,
+  максимизирующий сбалансированную точность (balanced accuracy), сохраняется
+  в model_config.json.
 
-- **tf.data.cache()** after JPEG decode:
-  First epoch reads from disk; all subsequent epochs read from RAM.
+- **tf.data.cache()** после декодирования JPEG:
+  Первая эпоха читает с диска; все последующие — из RAM.
 
-Saved artefacts
----------------
-efficientnet_combined.keras   best checkpoint (by val_auc)
-test_split.csv                held-out test video IDs + labels
-model_config.json             threshold, img_size, backbone, aggregation
+Сохраняемые артефакты
+---------------------
+efficientnet_combined.keras   лучший чекпойнт (по val_auc)
+test_split.csv                ID и метки видео отложенного теста
+model_config.json             порог, img_size, backbone, способ агрегации
 """
 
 import os
@@ -57,32 +58,32 @@ from sklearn.metrics import (
     recall_score, f1_score, confusion_matrix, roc_auc_score,
 )
 
-# ── Config ─────────────────────────────────────────────────────────────────────
+# ── Конфигурация ─────────────────────────────────────────────────────────────
 FF_FACES_DIR      = "faces_dataset"
 CELEBDF_FACES_DIR = "celebdf_faces"
 MODEL_PATH        = "efficientnet_combined.keras"
 TEST_SPLIT_PATH   = "test_split.csv"
 CONFIG_PATH       = "model_config.json"
 
-IMG_SIZE         = 224        # B0 native resolution (B4 was 380)
-BATCH_SIZE       = 32         # Larger batch OK with smaller images
-UNFREEZE_N       = 80         # B0 has ~237 layers — unfreeze top ~1/3
+IMG_SIZE         = 224        # нативное разрешение B0 (у B4 было 380)
+BATCH_SIZE       = 32         # больший батч допустим с меньшими картинками
+UNFREEZE_N       = 80         # у B0 ~237 слоёв — размораживаем верхнюю ~1/3
 LR_WARMUP        = 1e-3
-LR_FINETUNE      = 5e-5       # 1e-5 was too low — head can't escape ~0.5 plateau
-EPOCHS_WARMUP    = 1          # Frozen ImageNet features can't discriminate deepfakes
+LR_FINETUNE      = 5e-5       # 1e-5 был слишком мал — голова не уходит с плато ~0.5
+EPOCHS_WARMUP    = 1          # замороженные ImageNet-признаки не различают дипфейки
 EPOCHS_FT        = 30
 FRAMES_PER_VIDEO = 10
 RANDOM_SEED      = 42
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Вспомогательные функции ────────────────────────────────────────────────────
 def get_video_id(filepath: str) -> str:
-    """Strip frame-index suffix to recover the video identifier."""
+    """Убирает суффикс с индексом кадра, восстанавливая идентификатор видео."""
     return "_".join(os.path.basename(filepath).split("_")[:-1])
 
 
 def collect_frames(faces_dir: str, prefix: str):
-    """Return (real_frames, fake_frames) as lists of (path, video_id)."""
+    """Возвращает (real_frames, fake_frames) как списки (путь, video_id)."""
     real_frames, fake_frames = [], []
     for label_name, bucket in [("real", real_frames), ("fake", fake_frames)]:
         folder = os.path.join(faces_dir, label_name)
@@ -95,10 +96,10 @@ def collect_frames(faces_dir: str, prefix: str):
 
 
 def load_frame_numpy(path: str):
-    """Load a single face image for numpy-based evaluation.
+    """Загружает одно изображение лица для оценки через numpy.
 
-    Returns float32 in [0, 255] — EfficientNetB0's include_preprocessing
-    handles ImageNet normalisation internally.
+    Возвращает float32 в диапазоне [0, 255] — include_preprocessing у
+    EfficientNetB0 выполняет ImageNet-нормализацию внутри модели.
     """
     img = cv2.imread(path)
     if img is None:
@@ -108,7 +109,7 @@ def load_frame_numpy(path: str):
     return img.astype("float32")
 
 
-# ── Collect all frames ─────────────────────────────────────────────────────────
+# ── Сбор всех кадров ───────────────────────────────────────────────────────────
 print("=" * 60)
 print("Collecting frames from FF++ and Celeb-DF")
 print("=" * 60)
@@ -124,7 +125,7 @@ print(f"Celeb-DF — real: {len(cdf_real):>5}, fake: {len(cdf_fake):>5}")
 print(f"Combined — real: {len(all_real):>5}, fake: {len(all_fake):>5}")
 
 
-# ── Label verification ────────────────────────────────────────────────────────
+# ── Проверка меток ──────────────────────────────────────────────────────────────
 print("\n── Label verification ──")
 for faces_dir, prefix, desc in [
     (FF_FACES_DIR, "ff__", "FF++"),
@@ -139,7 +140,7 @@ for faces_dir, prefix, desc in [
 print("  Convention: real=0, fake=1  ✓")
 
 
-# ── Video-level 3-way split (70 / 15 / 15) ────────────────────────────────────
+# ── Разбиение по видео на 3 части (70 / 15 / 15) ──────────────────────────────
 print("\n── Video-level split (70% train / 15% val / 15% test) ──")
 
 real_vids = sorted(set(vid for _, vid in all_real))
@@ -180,7 +181,7 @@ print(f"Val   — real: {len(r_va):>5}, fake: {len(f_va):>5}, total: {len(val_al
 print(f"Test  — real: {len(r_te):>5}, fake: {len(f_te):>5}, total: {len(r_te)+len(f_te)}")
 
 
-# ── Save test split ───────────────────────────────────────────────────────────
+# ── Сохранение тестового разбиения ─────────────────────────────────────────────
 test_records = []
 for vid in sorted(real_test_v):
     test_records.append({"video_id": vid, "label": 0})
@@ -191,13 +192,13 @@ print(f"\nTest split → {TEST_SPLIT_PATH} "
       f"({len(real_test_v)} real + {len(fake_test_v)} fake videos)")
 
 
-# ── Compute per-sample weights (balances real/fake AND source) ────────────────
-# class_weight balances only real vs fake. Our dataset has a second imbalance:
-# within the real class, Celeb-DF contributes ~3× more frames than FF++
-# (and within fake the ratio is reversed). If left uncorrected, the model
-# learns "real = celebrity-style" and misclassifies YouTube-style real videos.
-# Per-sample weights rebalance all four (source, label) cells equally; this
-# subsumes class_weight.
+# ── Повесовые веса (балансируют real/fake И источник) ─────────────────────────
+# class_weight балансирует только настоящие vs фейк. В нашем датасете есть второй
+# дисбаланс: внутри класса настоящих Celeb-DF даёт ~3× больше кадров, чем FF++
+# (а внутри фейков соотношение обратное). Без коррекции модель выучивает
+# «настоящее = стиль знаменитостей» и ошибается на настоящих видео в стиле YouTube.
+# Повесовые веса уравнивают все четыре ячейки (источник, метка); это поглощает
+# собой class_weight.
 train_paths   = [p for p, _, _ in train_all]
 train_labels  = [l for _, _, l in train_all]
 train_sources = ["ff" if v.startswith("ff__") else "cdf"
@@ -208,7 +209,7 @@ for src, lbl in zip(train_sources, train_labels):
     cell_counts[(src, lbl)] += 1
 
 n_total = len(train_all)
-n_cells = len(cell_counts)   # expected: 4
+n_cells = len(cell_counts)   # ожидается: 4
 sample_weight_map = {
     cell: n_total / (n_cells * count)
     for cell, count in cell_counts.items()
@@ -226,7 +227,7 @@ for (src, lbl), w in sorted(sample_weight_map.items()):
 print(f"  (replaces class_weight — subsumes both real/fake and source balance)")
 
 
-# ── Group validation frames by video (for post-training threshold tuning) ─────
+# ── Группировка кадров валидации по видео (для подбора порога после обучения) ──
 val_videos = defaultdict(lambda: {"paths": [], "label": None})
 for path, vid, label in val_all:
     val_videos[vid]["paths"].append(path)
@@ -238,7 +239,7 @@ print(f"\nVal videos for threshold tuning: {len(val_videos)} "
 
 
 # ── TF Dataset ─────────────────────────────────────────────────────────────────
-# Pre-shuffle paths so classes are interleaved before .cache()
+# Предварительно перемешиваем пути, чтобы классы чередовались до .cache()
 rng = np.random.default_rng(RANDOM_SEED)
 perm = rng.permutation(len(train_paths))
 train_paths   = [train_paths[i]   for i in perm]
@@ -266,31 +267,31 @@ def load_image_val(path: tf.Tensor, label: tf.Tensor):
 
 
 def augment(img: tf.Tensor, label: tf.Tensor, weight: tf.Tensor):
-    """Symmetric augmentation — identical for real and fake.
+    """Симметричная аугментация — одинаковая для настоящих и фейков.
 
-    Outputs uint8-range float32 in [0, 255]. EfficientNetB0 has
-    include_preprocessing=True by default — it does ImageNet normalisation
-    internally. Pre-normalising here would feed garbage to the frozen BN
-    layers and collapse the model to a constant.
+    Выдаёт float32 в диапазоне uint8 [0, 255]. У EfficientNetB0 по умолчанию
+    include_preprocessing=True — он делает ImageNet-нормализацию внутри.
+    Предварительная нормализация здесь скормила бы мусор замороженным BN-слоям
+    и схлопнула бы модель в константу.
     """
     img = tf.image.random_jpeg_quality(img, min_jpeg_quality=70, max_jpeg_quality=100)
-    img = tf.cast(img, tf.float32)                      # stays in [0, 255]
+    img = tf.cast(img, tf.float32)                      # остаётся в [0, 255]
     img = tf.image.random_flip_left_right(img)
-    img = tf.image.random_brightness(img, max_delta=25.0)        # ±10% of 255
+    img = tf.image.random_brightness(img, max_delta=25.0)        # ±10% от 255
     img = tf.image.random_contrast(img, lower=0.90, upper=1.10)
     img = tf.clip_by_value(img, 0.0, 255.0)
     return img, label, weight
 
 
 def preprocess_val(img: tf.Tensor, label: tf.Tensor):
-    img = tf.cast(img, tf.float32)                      # stays in [0, 255]
+    img = tf.cast(img, tf.float32)                      # остаётся в [0, 255]
     return img, label
 
 
-# .cache() after decode: first epoch reads disk, rest read RAM (~2 GB).
-# Remove .cache() if RAM is tight.
-# Dataset yields (img, label, sample_weight); Keras automatically applies
-# per-sample weighting from the third tuple element — no class_weight needed.
+# .cache() после декодирования: первая эпоха читает с диска, остальные — из RAM (~2 ГБ).
+# Уберите .cache(), если не хватает оперативной памяти.
+# Датасет выдаёт (img, label, sample_weight); Keras автоматически применяет
+# повесовое взвешивание из третьего элемента кортежа — class_weight не нужен.
 train_ds = (
     tf.data.Dataset.from_tensor_slices((train_paths, train_labels, train_weights))
     .map(load_image_train, num_parallel_calls=tf.data.AUTOTUNE)
@@ -315,13 +316,13 @@ print(f"  Train: {len(train_paths)} frames, {len(train_paths)//BATCH_SIZE} batch
 print(f"  Val:   {len(val_paths)} frames, {len(val_paths)//BATCH_SIZE} batches/epoch")
 
 
-# ── Diagnostic callback ───────────────────────────────────────────────────────
+# ── Диагностический колбэк ─────────────────────────────────────────────────────
 class OutputDistribution(tf.keras.callbacks.Callback):
-    """Prints per-class probability distribution after each epoch.
+    """Печатает распределение вероятностей по классам после каждой эпохи.
 
-    If real-mean and fake-mean stay close together, the model isn't learning
-    discriminative features — symptom of frozen base, too-low LR, or augmentation
-    leakage. A healthy run shows separation growing each epoch.
+    Если средние для настоящих и фейков остаются близки, модель не учит
+    различающие признаки — симптом замороженной базы, слишком малого LR или
+    утечки аугментации. В здоровом прогоне разделение растёт с каждой эпохой.
     """
     def __init__(self, val_ds, val_labels):
         super().__init__()
@@ -338,7 +339,7 @@ class OutputDistribution(tf.keras.callbacks.Callback):
               f"separation={sep:+.3f}")
 
 
-# ── Model ──────────────────────────────────────────────────────────────────────
+# ── Модель ───────────────────────────────────────────────────────────────────
 base = EfficientNetB0(
     weights="imagenet",
     include_top=False,
@@ -360,7 +361,7 @@ trainable_warmup = sum(tf.size(v).numpy() for v in model.trainable_variables)
 print(f"  Trainable (warm-up):   {trainable_warmup:>12,}")
 
 
-# ── Phase 1: warm-up ──────────────────────────────────────────────────────────
+# ── Фаза 1: прогрев ────────────────────────────────────────────────────────────
 print("\n" + "=" * 60)
 print(f"Phase 1: Warm-up — Dense head only ({EPOCHS_WARMUP} epochs)")
 print("=" * 60)
@@ -378,7 +379,7 @@ model.fit(
 )
 
 
-# ── Phase 2: fine-tune ────────────────────────────────────────────────────────
+# ── Фаза 2: дообучение ─────────────────────────────────────────────────────────
 print("\n" + "=" * 60)
 print(f"Phase 2: Fine-tune — top {UNFREEZE_N} EfficientNet layers")
 print("=" * 60)
@@ -387,10 +388,10 @@ base.trainable = True
 for layer in base.layers[:-UNFREEZE_N]:
     layer.trainable = False
 
-# CRITICAL: keep all BatchNormalization in inference mode.
-# Otherwise BN re-computes statistics on small training batches, which
-# destroys ImageNet pretrained features and causes oscillating val_auc.
-# This is the documented EfficientNet fine-tuning trap.
+# КРИТИЧНО: держим все BatchNormalization в режиме инференса.
+# Иначе BN пересчитывает статистики на маленьких обучающих батчах, что
+# разрушает предобученные ImageNet-признаки и вызывает колебания val_auc.
+# Это задокументированная ловушка дообучения EfficientNet.
 n_bn_frozen = 0
 for layer in base.layers:
     if isinstance(layer, tf.keras.layers.BatchNormalization):
@@ -423,7 +424,7 @@ model.fit(
 )
 
 
-# ── Video-level threshold optimisation on validation ──────────────────────────
+# ── Подбор порога на уровне видео по валидации ────────────────────────────────
 print("\n" + "=" * 60)
 print("Video-level threshold optimisation (validation set)")
 print("=" * 60)
@@ -454,10 +455,11 @@ vid_labels = np.array(vid_labels)
 print(f"Evaluated {len(vid_labels)} val videos "
       f"(real: {np.sum(vid_labels==0)}, fake: {np.sum(vid_labels==1)})")
 
-# Search threshold that maximises balanced accuracy.
-# F1 is degenerate on imbalanced data — it can reward "predict all positive"
-# (recall=1, precision=2/3 → F1=0.80) which has zero discriminative power.
-# Balanced accuracy = mean(TPR, TNR), so a degenerate model scores 0.5.
+# Ищем порог, максимизирующий сбалансированную точность.
+# F1 вырождается на несбалансированных данных — он может поощрять «предсказывать
+# всё как положительное» (recall=1, precision=2/3 → F1=0.80), что не несёт
+# различающей способности. Balanced accuracy = mean(TPR, TNR), поэтому
+# вырожденная модель получает 0.5.
 best_thr, best_bal = 0.5, 0.0
 for thr in np.arange(0.20, 0.80, 0.01):
     preds = (vid_probs >= thr).astype(int)
@@ -468,7 +470,7 @@ for thr in np.arange(0.20, 0.80, 0.01):
 print(f"Optimal threshold: {best_thr:.2f}  (val balanced acc = {best_bal:.4f})")
 
 
-# ── Save config ───────────────────────────────────────────────────────────────
+# ── Сохранение конфигурации ─────────────────────────────────────────────────────
 config = {
     "threshold":        best_thr,
     "img_size":         IMG_SIZE,
@@ -482,7 +484,7 @@ with open(CONFIG_PATH, "w") as f:
 print(f"Config saved → {CONFIG_PATH}")
 
 
-# ── Final validation metrics (video-level) ────────────────────────────────────
+# ── Итоговые метрики валидации (на уровне видео) ──────────────────────────────
 y_pred = (vid_probs >= best_thr).astype(int)
 
 val_auc     = roc_auc_score(vid_labels, vid_probs)

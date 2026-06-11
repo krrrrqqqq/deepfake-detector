@@ -1,14 +1,14 @@
 """
 test_ablation.py
 ================
-Evaluate an ablation checkpoint on the held-out test set, using the same
-test split and same evaluation procedure as test_combined.py.
+Оценивает чекпойнт абляции на отложенном тесте, используя то же тестовое
+разбиение и ту же процедуру оценки, что и test_combined.py.
 
-Produces a single-line JSON record per variant for direct insertion into
-the §3.3.4 ablation table:
+Создаёт однострочную JSON-запись на вариант для прямой вставки в таблицу
+абляции из §3.3.4:
     ROC-AUC, BalAcc, FF++ real recall, Celeb-DF fake recall.
 
-Run from dataset/:
+Запуск из dataset/:
     python test_ablation.py --variant no_weighting
 """
 
@@ -47,7 +47,7 @@ TEST_SPLIT_PATH   = "test_split.csv"
 BATCH_SIZE        = 32
 
 
-# ── Load config ───────────────────────────────────────────────────────────────
+# ── Загрузка конфигурации ───────────────────────────────────────────────────────
 with open(CONFIG_PATH) as f:
     cfg = json.load(f)
 
@@ -61,16 +61,16 @@ print(f"  model:     {MODEL_PATH}")
 print(f"  threshold: {THRESHOLD}")
 
 
-# ── Load model ────────────────────────────────────────────────────────────────
+# ── Загрузка модели ──────────────────────────────────────────────────────────
 model = tf.keras.models.load_model(MODEL_PATH)
 
 
-# ── Load test split ───────────────────────────────────────────────────────────
+# ── Загрузка тестового разбиения ─────────────────────────────────────────────
 test_df = pd.read_csv(TEST_SPLIT_PATH)
 test_videos = {row["video_id"]: int(row["label"]) for _, row in test_df.iterrows()}
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Вспомогательные функции ────────────────────────────────────────────────────
 def get_video_id(filepath: str) -> str:
     return "_".join(os.path.basename(filepath).split("_")[:-1])
 
@@ -108,7 +108,7 @@ all_index = {**index_faces(FF_FACES_DIR, "ff__"),
              **index_faces(CELEBDF_FACES_DIR, "cdf__")}
 
 
-# ── Inference ─────────────────────────────────────────────────────────────────
+# ── Инференс ──────────────────────────────────────────────────────────────────
 video_frame_probs = {}
 video_labels_map = {}
 
@@ -132,7 +132,7 @@ vid_labels = np.array([video_labels_map[v] for v in vid_ids])
 y_pred     = (vid_scores >= THRESHOLD).astype(int)
 
 
-# ── Overall metrics ───────────────────────────────────────────────────────────
+# ── Общие метрики ─────────────────────────────────────────────────────────────
 roc_auc = roc_auc_score(vid_labels, vid_scores)
 pr_auc  = average_precision_score(vid_labels, vid_scores)
 bal_acc = balanced_accuracy_score(vid_labels, y_pred)
@@ -143,7 +143,7 @@ cm      = confusion_matrix(vid_labels, y_pred)
 tn, fp, fn, tp = cm.ravel()
 
 
-# ── Per-source recalls ────────────────────────────────────────────────────────
+# ── Recall по источникам ──────────────────────────────────────────────────────
 def source_recalls(prefix):
     src_ids = [v for v in vid_ids if v.startswith(prefix)]
     src_scores = np.array([float(np.median(video_frame_probs[v])) for v in src_ids])
@@ -167,7 +167,7 @@ ff_metrics  = source_recalls("ff__")
 cdf_metrics = source_recalls("cdf__")
 
 
-# ── Save + print ──────────────────────────────────────────────────────────────
+# ── Сохранение и вывод ─────────────────────────────────────────────────────────
 result = {
     "variant":        VARIANT,
     "threshold":      THRESHOLD,
